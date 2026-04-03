@@ -207,12 +207,14 @@ export function drawEnvelope(
 
   context.stroke();
 
-  const clampedProgress = Math.min(1, Math.max(0, playheadProgress));
-  const playheadX = clampedProgress * width;
-  context.beginPath();
-  context.strokeStyle = 'rgba(127, 67, 25, 0.45)';
-  context.lineWidth = 1.5;
-  context.moveTo(playheadX, 0);
-  context.lineTo(playheadX, height);
-  context.stroke();
+  if (playheadProgress >= 0) {
+    const clampedProgress = Math.min(1, Math.max(0, playheadProgress));
+    const playheadX = clampedProgress * width;
+    context.beginPath();
+    context.strokeStyle = 'rgba(127, 67, 25, 0.45)';
+    context.lineWidth = 1.5;
+    context.moveTo(playheadX, 0);
+    context.lineTo(playheadX, height);
+    context.stroke();
+  }
 }

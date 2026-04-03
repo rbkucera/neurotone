@@ -124,10 +124,22 @@ describe('sanitizeNoiseConfig', () => {
       sanitizeNoiseConfig({
         enabled: true,
         volume: 2,
+        model: 'brown',
       }),
     ).toEqual({
       enabled: true,
       volume: 1,
+      model: 'brown',
+    });
+  });
+
+  it('falls back to the default noise model for unknown values', () => {
+    expect(
+      sanitizeNoiseConfig({
+        model: 'ocean' as never,
+      }),
+    ).toMatchObject({
+      model: 'soft',
     });
   });
 });
