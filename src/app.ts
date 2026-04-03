@@ -16,7 +16,6 @@ import {
   drawEnvelope,
 } from './audio/visualization';
 import { generateSessionPlan } from './composer/generator';
-import { getPresetById, presets } from './presets';
 import {
   clampMidiToCarrierRange,
   frequencyToNearestMidi,
@@ -89,6 +88,12 @@ const TIMELINE_RAIL_LAYOUT = {
   innerPaddingPx: 18,
   rulerHeightPx: 34,
   rulerMajorTickPx: 14,
+};
+
+const TIMELINE_CHIP_ACTIONS = {
+  inlineMinWidthPx: 138,
+  confirmInlineMinWidthPx: 204,
+  overlayMinWidthPx: 124,
 };
 
 const TIMELINE_ZOOM = {
@@ -185,21 +190,6 @@ function renderNoiseModelOptions(currentModel: NoiseModel): string {
       `,
     )
     .join('');
-}
-
-function renderPresetOptions(currentPresetId: string | null): string {
-  return [
-    '<option value="custom">Custom session</option>',
-    ...presets.map(
-      (preset) => `
-        <option value="${preset.id}" ${
-          currentPresetId === preset.id ? 'selected' : ''
-        }>
-          ${preset.label}
-        </option>
-      `,
-    ),
-  ].join('');
 }
 
 function renderCarrierModeToggle(currentMode: CarrierDisplayMode): string {
@@ -1226,6 +1216,85 @@ function computeClipProgress(
   );
 }
 
+function renderTimelineChipActions(
+  segmentId: string,
+  canRemove: boolean,
+  variant: 'inline' | 'overlay',
+  pendingRemoveSegmentId: string | null,
+): string {
+  if (segmentId === pendingRemoveSegmentId) {
+    return `
+      <div class="timeline-chip-actions timeline-chip-actions--${variant} timeline-chip-actions--confirm">
+        <span class="timeline-chip-actions__confirm-label">Remove?</span>
+        <button
+          class="timeline-chip-action timeline-chip-action--confirm"
+          data-action="confirm-remove-segment"
+          data-segment-id="${segmentId}"
+          type="button"
+          aria-label="Confirm remove segment"
+        >
+          Yes
+        </button>
+        <button
+          class="timeline-chip-action"
+          data-action="cancel-remove-segment"
+          data-segment-id="${segmentId}"
+          type="button"
+          aria-label="Cancel remove segment"
+        >
+          No
+        </button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="timeline-chip-actions timeline-chip-actions--${variant}">
+      <button
+        class="timeline-chip-action"
+        data-action="seek-segment"
+        data-segment-id="${segmentId}"
+        type="button"
+        title="Jump to segment"
+        aria-label="Jump to segment"
+      >
+        J
+      </button>
+      <button
+        class="timeline-chip-action"
+        data-action="add-segment-after"
+        data-segment-id="${segmentId}"
+        type="button"
+        title="Add segment after"
+        aria-label="Add segment after"
+      >
+        +
+      </button>
+      <button
+        class="timeline-chip-action"
+        data-action="duplicate-segment"
+        data-segment-id="${segmentId}"
+        type="button"
+        title="Duplicate segment"
+        aria-label="Duplicate segment"
+      >
+        D
+      </button>
+      <button
+        class="timeline-chip-action timeline-chip-action--danger"
+        data-action="request-remove-segment"
+        data-segment-id="${segmentId}"
+        type="button"
+        title="Remove segment"
+        aria-label="Remove segment"
+        ${canRemove ? '' : 'disabled'}
+      >
+        -
+      </button>
+    </div>
+  `;
+}
+
 function renderSegmentLaneOverlay(
   clip: TimelineClipModel,
 ): string {
@@ -1276,8 +1345,24 @@ function renderTimelineViewport(
   selectedSegmentId: string | null,
   playbackState: SessionPlaybackState,
   zoomLevel: number,
+  revealedChipActionsSegmentId: string | null,
+  pendingRemoveSegmentId: string | null,
 ): string {
   const viewport = buildTimelineViewportModel(session, playbackState, zoomLevel);
+  const canRemoveSegment = session.segments.length > 1;
+  const overlayCandidateId = revealedChipActionsSegmentId ?? selectedSegmentId;
+  const overlayCandidateClip = overlayCandidateId
+    ? viewport.clips.find((clip) => clip.window.segment.id === overlayCandidateId)
+    : undefined;
+  const overlayCandidateMinWidth =
+    overlayCandidateId === pendingRemoveSegmentId
+      ? TIMELINE_CHIP_ACTIONS.confirmInlineMinWidthPx
+      : TIMELINE_CHIP_ACTIONS.inlineMinWidthPx;
+  const overlaySegmentId =
+    overlayCandidateClip &&
+    overlayCandidateClip.width < overlayCandidateMinWidth
+      ? overlayCandidateClip.window.segment.id
+      : null;
 
   return `
     <div class="timeline-canvas__chrome">
@@ -1318,10 +1403,17 @@ function renderTimelineViewport(
               const isSelected = segment.id === selectedSegmentId;
               const isActive = index === playbackState.currentSegmentIndex;
               const progress = computeClipProgress(clip, playbackState);
+              const isRevealed = segment.id === revealedChipActionsSegmentId;
+              const isPendingRemove = segment.id === pendingRemoveSegmentId;
+              const inlineActionsThreshold = isPendingRemove
+                ? TIMELINE_CHIP_ACTIONS.confirmInlineMinWidthPx
+                : TIMELINE_CHIP_ACTIONS.inlineMinWidthPx;
+              const hasInlineActions =
+                clip.width >= inlineActionsThreshold;
 
               return `
                 <article
-                  class="timeline-clip ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''}"
+                  class="timeline-clip ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''} ${isRevealed ? 'is-revealed' : ''}"
                   data-clip-id="${segment.id}"
                   style="left:${clip.left}px;width:${clip.width}px"
                 >
@@ -1355,12 +1447,36 @@ function renderTimelineViewport(
                       </div>
                     </div>
                   </button>
+                  ${
+                    hasInlineActions
+                      ? `
+                        <div class="timeline-clip__actions-inline">
+                          ${renderTimelineChipActions(segment.id, canRemoveSegment, 'inline', pendingRemoveSegmentId)}
+                        </div>
+                      `
+                      : ''
+                  }
                 </article>
               `;
             })
             .join('')}
         </div>
       </div>
+      ${
+        overlaySegmentId
+          ? `
+            <div class="timeline-chip-overlay-layer" data-role="timeline-chip-overlay-layer" aria-hidden="true">
+              <div
+                class="timeline-chip-overlay"
+                data-role="timeline-chip-overlay"
+                data-segment-id="${overlaySegmentId}"
+              >
+                ${renderTimelineChipActions(overlaySegmentId, canRemoveSegment, 'overlay', pendingRemoveSegmentId)}
+              </div>
+            </div>
+          `
+          : ''
+      }
     </div>
   `;
 }
@@ -1409,6 +1525,8 @@ interface AdvancedViewportModel {
   windows: SegmentWindow[];
   lanes: AutomationLane[];
 }
+
+type ManualDiagnosticsTab = AnalysisDockTab;
 
 function buildAdvancedViewportModel(
   session: SessionDefinition,
@@ -1808,90 +1926,132 @@ function renderAnalysisDock(currentTab: AnalysisDockTab): string {
   `;
 }
 
-function renderDiagnosticsMarkup(): string {
+function renderManualDiagnosticsTabToggle(currentTab: ManualDiagnosticsTab): string {
   return `
-    <div class="advanced-grid advanced-grid--diagnostics">
-      <section class="viz-panel">
-        <div class="viz-panel__header">
-          <div>
-            <p class="layer-card__eyebrow">Diagnostic View</p>
-            <h3>Beat map</h3>
+    <div class="segmented-control segmented-control--compact">
+      <button
+        class="segmented-control__button ${currentTab === 'beat-map' ? 'is-active' : ''}"
+        data-action="set-manual-diagnostics-tab"
+        data-tab="beat-map"
+        type="button"
+      >
+        Beat map
+      </button>
+      <button
+        class="segmented-control__button ${currentTab === 'envelope' ? 'is-active' : ''}"
+        data-action="set-manual-diagnostics-tab"
+        data-tab="envelope"
+        type="button"
+      >
+        Envelope
+      </button>
+      <button
+        class="segmented-control__button ${currentTab === 'metrics' ? 'is-active' : ''}"
+        data-action="set-manual-diagnostics-tab"
+        data-tab="metrics"
+        type="button"
+      >
+        Metrics
+      </button>
+    </div>
+  `;
+}
+
+function renderManualDiagnosticsMarkup(
+  currentTab: ManualDiagnosticsTab,
+  open: boolean,
+): string {
+  return `
+    <div class="manual-diagnostics__header">
+      <div>
+        <p class="layer-card__eyebrow">Diagnostics</p>
+        <h3>Playback analysis</h3>
+      </div>
+      <div class="manual-diagnostics__header-actions">
+        ${
+          open
+            ? renderManualDiagnosticsTabToggle(currentTab)
+            : ''
+        }
+        <button
+          class="ghost-button ghost-button--compact"
+          data-action="toggle-manual-diagnostics"
+          type="button"
+        >
+          ${open ? 'Hide diagnostics' : 'Show diagnostics'}
+        </button>
+      </div>
+    </div>
+
+    <div class="manual-diagnostics__body ${open ? 'is-open' : 'is-collapsed'}">
+      <section class="analysis-pane ${currentTab === 'beat-map' ? 'is-active' : ''}">
+        <div class="viz-panel viz-panel--dock">
+          <div class="viz-panel__header">
+            <div>
+              <p class="layer-card__eyebrow">Diagnostic View</p>
+              <h3>Beat map</h3>
+            </div>
+            <span class="subtle">Computed from the active sound state</span>
           </div>
-          <span class="subtle">Computed from the active sound state</span>
+          <div data-role="beat-map-primary"></div>
+          <details class="viz-panel__details" data-role="beat-map-details">
+            <summary>Second-order interactions</summary>
+            <div data-role="beat-map-secondary"></div>
+          </details>
         </div>
-
-        <div data-role="beat-map-primary"></div>
-        <details class="viz-panel__details" data-role="beat-map-details">
-          <summary>Second-order interactions</summary>
-          <div data-role="beat-map-secondary"></div>
-        </details>
-
-        <div class="viz-panel__header viz-panel__header--envelope">
-          <div>
-            <p class="layer-card__eyebrow">Composite Motion</p>
-            <h3>Envelope waveform</h3>
-          </div>
-          <span class="subtle">Pure math, no signal analysis</span>
-        </div>
-
-        <canvas class="envelope-canvas" data-role="envelope-canvas" height="96"></canvas>
       </section>
 
-      <section class="metrics-block">
-        <div class="panel__header panel__header--compact">
-          <h3>Validation readout</h3>
-          <span class="subtle">Live engine snapshot</span>
+      <section class="analysis-pane ${currentTab === 'envelope' ? 'is-active' : ''}">
+        <div class="viz-panel viz-panel--dock">
+          <div class="viz-panel__header viz-panel__header--envelope">
+            <div>
+              <p class="layer-card__eyebrow">Composite Motion</p>
+              <h3>Envelope waveform</h3>
+            </div>
+            <span class="subtle">Pure math, no signal analysis</span>
+          </div>
+          <canvas class="envelope-canvas" data-role="envelope-canvas" height="96"></canvas>
         </div>
-        <div class="metrics" data-role="metrics"></div>
+      </section>
+
+      <section class="analysis-pane ${currentTab === 'metrics' ? 'is-active' : ''}">
+        <section class="metrics-block metrics-block--dock">
+          <div class="panel__header panel__header--compact">
+            <h3>Validation readout</h3>
+            <span class="subtle">Live engine snapshot</span>
+          </div>
+          <div class="metrics" data-role="metrics"></div>
+        </section>
       </section>
     </div>
   `;
 }
 
 function renderManualHeader(
-  currentPresetId: string | null,
+  session: SessionDefinition,
   shareButtonLabel: string,
   playbackMode: PlaybackMode,
 ): string {
   return `
-    <section class="hero">
-      <div class="hero__meta">
-        <p class="eyebrow">Neurotone</p>
-        <span class="status" data-role="status-pill">Idle</span>
-      </div>
+    <section class="panel panel--tool-header panel--tool-header-timeline">
+      <div class="tool-header tool-header--timeline">
+        <div class="tool-header__row">
+          <div class="tool-header__session">
+            <p class="eyebrow">Manual studio</p>
+            <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
+          </div>
 
-      <h1>Manual listening lab.</h1>
-      <p class="intro">
-        Audition one selected segment directly, tune the layers by ear, and keep diagnostics close at hand.
-      </p>
+          <div class="tool-header__controls">
+            <label class="tool-header__mode">
+              ${renderPlaybackModeToggle(playbackMode)}
+            </label>
 
-      <div class="hero__actions">
-        <button class="transport" data-action="manual-transport">Start selected segment</button>
-
-        <div class="hero-tools">
-          <label class="select-field">
-            <span>Preset</span>
-            <select data-role="preset-select">
-              ${renderPresetOptions(currentPresetId)}
-            </select>
-          </label>
-
-          <button class="secondary-action secondary-action--compact" data-action="share-link">
-            <span data-role="share-label">${shareButtonLabel}</span>
-          </button>
+            <button class="ghost-button tool-header__share" data-action="share-link" type="button">
+              <span data-role="share-label">${shareButtonLabel}</span>
+            </button>
+          </div>
         </div>
       </div>
-
-      <div class="hero__controls">
-        <label class="panel__tool">
-          <span class="subtle">Playback mode</span>
-          <span data-role="playback-mode-toggle">${renderPlaybackModeToggle(playbackMode)}</span>
-        </label>
-        <div class="hero__timeline-meta" data-role="header-meta"></div>
-      </div>
-
-      <p class="notice">Headphones required for binaural perception.</p>
-      <p class="preset-copy" data-role="preset-description"></p>
       <div data-role="headphone-notice"></div>
     </section>
   `;
@@ -2060,7 +2220,7 @@ function renderTimelineInspectorActions(
       <button class="ghost-button ghost-button--compact" data-action="seek-segment" data-segment-id="${selectedSegmentId}" type="button">Jump</button>
       <button class="ghost-button ghost-button--compact" data-action="add-segment-after" data-segment-id="${selectedSegmentId}" type="button">Add after</button>
       <button class="ghost-button ghost-button--compact" data-action="duplicate-segment" data-segment-id="${selectedSegmentId}" type="button">Duplicate</button>
-      <button class="ghost-button ghost-button--compact" data-action="remove-segment" data-segment-id="${selectedSegmentId}" type="button" ${canRemove ? '' : 'disabled'}>Remove</button>
+      <button class="ghost-button ghost-button--compact" data-action="request-remove-segment" data-segment-id="${selectedSegmentId}" type="button" ${canRemove ? '' : 'disabled'}>Remove</button>
     </div>
   `;
 }
@@ -2667,6 +2827,8 @@ function renderManualWorkspace(
   session: SessionDefinition,
   selectedSegmentId: string | null,
   carrierDisplayMode: CarrierDisplayMode,
+  manualDiagnosticsTab: ManualDiagnosticsTab,
+  manualDiagnosticsOpen: boolean,
 ): string {
   const selectedIndex = Math.max(
     0,
@@ -2674,54 +2836,91 @@ function renderManualWorkspace(
   );
 
   return `
-    <section class="panel panel--manual-workspace">
-      <div class="panel__header">
-        <div>
-          <p class="layer-card__eyebrow">Manual Mode</p>
-          <h2>Selected segment lab</h2>
-        </div>
-        <div class="panel__tools">
-          ${
-            session.segments.length > 1
-              ? `
-                <label class="select-field">
-                  <span>Selected segment</span>
-                  <select data-input="manual-segment-select">
-                    ${session.segments
-                      .map(
-                        (segment, index) => `
-                          <option value="${segment.id}" ${
-                            segment.id === selectedSegmentId ? 'selected' : ''
-                          }>
-                            Segment ${index + 1}: ${escapeHtml(segment.label || `Segment ${index + 1}`)}
-                          </option>
-                        `,
-                      )
-                      .join('')}
-                  </select>
-                </label>
-              `
-              : ''
-          }
-          <label class="panel__tool">
-            <span class="subtle">Carrier display</span>
-            ${renderCarrierModeToggle(carrierDisplayMode)}
-          </label>
-        </div>
-      </div>
+    <section class="panel panel--workspace panel--workspace-manual">
+      <div class="manual-edit-layout">
+        <section class="panel--embedded panel--manual-diagnostics-row" data-role="manual-diagnostics">
+          ${renderManualDiagnosticsMarkup(manualDiagnosticsTab, manualDiagnosticsOpen)}
+        </section>
 
-      <div class="manual-workspace__summary">
-        <p class="subtle">Auditioning segment ${selectedIndex + 1} of ${session.segments.length}. Manual mode plays only the currently selected segment.</p>
-      </div>
+        <section class="panel--embedded panel--manual-editor">
+          <div class="manual-editor__toolbar">
+            <div class="manual-editor__tools">
+              ${
+                session.segments.length > 1
+                  ? `
+                    <label class="select-field select-field--compact">
+                      <span>Selected segment</span>
+                      <select data-input="manual-segment-select">
+                        ${session.segments
+                          .map(
+                            (segment, index) => `
+                              <option value="${segment.id}" ${
+                                segment.id === selectedSegmentId ? 'selected' : ''
+                              }>
+                                Segment ${index + 1}: ${escapeHtml(segment.label || `Segment ${index + 1}`)}
+                              </option>
+                            `,
+                          )
+                          .join('')}
+                      </select>
+                    </label>
+                  `
+                  : ''
+              }
 
-      <div class="segment-editor__meta" data-role="segment-meta"></div>
-      <div class="stack-note" data-role="stack-note"></div>
-      <div class="layer-list" data-role="layer-list"></div>
-      <button class="secondary-action" data-action="add-pair">Add layer</button>
-      <div data-role="support-controls"></div>
-    </section>
-    <section class="panel panel--diagnostics">
-      ${renderDiagnosticsMarkup()}
+              <label class="panel__tool panel__tool--compact">
+                <span class="subtle">Carrier display</span>
+                ${renderCarrierModeToggle(carrierDisplayMode)}
+              </label>
+
+              <button
+                class="transport transport--compact manual-editor__transport"
+                data-action="manual-transport"
+                type="button"
+              >
+                Start selected segment
+              </button>
+            </div>
+            <button class="secondary-action secondary-action--compact" data-action="add-pair">Add layer</button>
+          </div>
+
+          <div class="manual-workspace__summary">
+            <p class="subtle">Auditioning segment ${selectedIndex + 1} of ${session.segments.length}. Manual mode plays only the currently selected segment.</p>
+          </div>
+
+          <div class="manual-editor__body">
+            <section class="manual-editor__section">
+              <div class="manual-editor__section-header">
+                <p class="layer-card__eyebrow">Segment</p>
+                <h3 data-role="selected-segment-title">${escapeHtml(
+                  session.segments[selectedIndex]?.label || `Segment ${selectedIndex + 1}`,
+                )}</h3>
+              </div>
+              <div class="segment-editor__meta" data-role="segment-meta"></div>
+            </section>
+
+            <section class="manual-editor__section manual-editor__section--layers">
+              <div class="manual-editor__section-header">
+                <p class="layer-card__eyebrow">Layers</p>
+                <h3>Mini mixer</h3>
+              </div>
+              <div class="stack-note" data-role="stack-note"></div>
+              <div class="manual-layers-layout">
+                <div class="layer-list layer-list--compact" data-role="layer-list"></div>
+                <div data-role="layer-editor"></div>
+              </div>
+            </section>
+
+            <section class="manual-editor__section">
+              <div class="manual-editor__section-header">
+                <p class="layer-card__eyebrow">Support</p>
+                <h3>Noise and master</h3>
+              </div>
+              <div data-role="support-controls"></div>
+            </section>
+          </div>
+        </section>
+      </div>
     </section>
   `;
 }
@@ -2816,10 +3015,15 @@ export function createApp(root: HTMLElement): void {
     loadStoredState() ??
     createInitialShareableState();
   let playbackMode: PlaybackMode = restored.mode;
-  let currentPresetId: string | null = restored.presetId;
   let session: SessionDefinition = restored.session;
   let composerDraft: ComposerDraft = restored.composer;
   let timelineUI = loadTimelineWorkspaceUIState(session);
+  let manualDiagnosticsTab: ManualDiagnosticsTab = 'beat-map';
+  let manualDiagnosticsOpen = false;
+  let revealedChipActionsSegmentId: string | null = null;
+  let pendingRemoveSegmentId: string | null = null;
+  let timelineScrollAnimationFrameId: number | null = null;
+  let lastPointerType: string = 'mouse';
   let headphoneNoticeVisible = !hasSeenHeadphoneNotice();
   let shareButtonLabel = 'Copy share link';
   let shareFeedbackTimeoutId: number | null = null;
@@ -2870,7 +3074,7 @@ export function createApp(root: HTMLElement): void {
   const selectedState = (): SessionSoundState => selectedSegment().state;
 
   const currentShareableState = (): ShareableState => ({
-    presetId: currentPresetId,
+    presetId: null,
     mode: playbackMode,
     session,
     composer: composerDraft,
@@ -2917,9 +3121,8 @@ export function createApp(root: HTMLElement): void {
   const syncHeader = (): void => {
     const statusPill = root.querySelector<HTMLElement>('[data-role="status-pill"]');
     const shareLabel = root.querySelector<HTMLElement>('[data-role="share-label"]');
+    const manualTransport = root.querySelector<HTMLButtonElement>('[data-action="manual-transport"]');
     const headerMeta = root.querySelector<HTMLElement>('[data-role="header-meta"]');
-    const presetSelect = root.querySelector<HTMLSelectElement>('[data-role="preset-select"]');
-    const presetDescription = root.querySelector<HTMLElement>('[data-role="preset-description"]');
     const headphoneNotice = root.querySelector<HTMLElement>('[data-role="headphone-notice"]');
 
     if (statusPill) {
@@ -2947,25 +3150,15 @@ export function createApp(root: HTMLElement): void {
       shareLabel.textContent = shareButtonLabel;
     }
 
+    if (manualTransport) {
+      manualTransport.textContent =
+        engineState.playbackState === 'running'
+          ? 'Stop selected segment'
+          : 'Start selected segment';
+    }
+
     if (headerMeta) {
       headerMeta.textContent = headerMetaText();
-    }
-
-    if (presetSelect) {
-      presetSelect.innerHTML = renderPresetOptions(currentPresetId);
-      presetSelect.value = currentPresetId ?? 'custom';
-    }
-
-    if (presetDescription) {
-      if (currentPresetId) {
-        const preset = getPresetById(currentPresetId);
-        presetDescription.textContent = preset?.description ?? 'Preset ready.';
-      } else {
-        presetDescription.textContent =
-          playbackMode === 'manual'
-            ? 'Manual mode plays only the currently selected segment.'
-            : '';
-      }
     }
 
     if (headphoneNotice) {
@@ -3324,6 +3517,8 @@ export function createApp(root: HTMLElement): void {
       timelineUI.selectedSegmentId,
       activePlaybackState(),
       timelineUI.zoomLevel,
+      revealedChipActionsSegmentId,
+      pendingRemoveSegmentId,
     );
 
     const scrollContainer = root.querySelector<HTMLElement>('[data-role="timeline-scroll"]');
@@ -3331,6 +3526,162 @@ export function createApp(root: HTMLElement): void {
       const nextLeft = Math.max(0, timelineUI.viewportLeft);
       scrollContainer.scrollLeft = nextLeft;
     }
+    syncTimelineChipActionOverlayPosition();
+  };
+
+  const stopTimelineScrollAnimation = (): void => {
+    if (timelineScrollAnimationFrameId !== null) {
+      window.cancelAnimationFrame(timelineScrollAnimationFrameId);
+      timelineScrollAnimationFrameId = null;
+    }
+  };
+
+  const animateTimelineScrollLeft = (
+    scrollContainer: HTMLElement,
+    targetLeft: number,
+    requestedBehavior: ScrollBehavior,
+  ): void => {
+    const startLeft = scrollContainer.scrollLeft;
+    const distance = targetLeft - startLeft;
+    if (Math.abs(distance) < 0.5) {
+      scrollContainer.scrollLeft = targetLeft;
+      return;
+    }
+
+    if (requestedBehavior === 'auto') {
+      stopTimelineScrollAnimation();
+      scrollContainer.scrollLeft = targetLeft;
+      return;
+    }
+
+    stopTimelineScrollAnimation();
+    const distancePx = Math.abs(distance);
+    const durationMs = Math.max(260, Math.min(760, 280 + distancePx * 0.45));
+    const startedAt = performance.now();
+    const easeInOutCubic = (progress: number): number =>
+      progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+    const step = (now: number): void => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const eased = easeInOutCubic(progress);
+      scrollContainer.scrollLeft = startLeft + distance * eased;
+      if (progress < 1) {
+        timelineScrollAnimationFrameId = window.requestAnimationFrame(step);
+      } else {
+        timelineScrollAnimationFrameId = null;
+      }
+    };
+
+    timelineScrollAnimationFrameId = window.requestAnimationFrame(step);
+  };
+
+  const ensureTimelineSegmentVisible = (
+    segmentId: string,
+    requestedBehavior: ScrollBehavior = 'smooth',
+  ): void => {
+    const scrollContainer = root.querySelector<HTMLElement>('[data-role="timeline-scroll"]');
+    if (!scrollContainer) {
+      return;
+    }
+
+    const clip = scrollContainer.querySelector<HTMLElement>(`[data-clip-id="${segmentId}"]`);
+    if (!clip) {
+      return;
+    }
+
+    const viewportLeft = scrollContainer.scrollLeft;
+    const viewportWidth = scrollContainer.clientWidth;
+    if (viewportWidth <= 0) {
+      return;
+    }
+    const viewportRight = viewportLeft + viewportWidth;
+
+    const clipLeft = clip.offsetLeft;
+    const clipWidth = clip.offsetWidth;
+    const clipRight = clipLeft + clipWidth;
+
+    let nextLeft = viewportLeft;
+    if (clipWidth >= viewportWidth) {
+      nextLeft = clipLeft;
+    } else if (clipLeft < viewportLeft) {
+      nextLeft = clipLeft;
+    } else if (clipRight > viewportRight) {
+      nextLeft = clipRight - viewportWidth;
+    } else {
+      return;
+    }
+
+    const maxLeft = Math.max(0, scrollContainer.scrollWidth - viewportWidth);
+    const clampedLeft = Math.max(0, Math.min(nextLeft, maxLeft));
+    if (Math.abs(clampedLeft - viewportLeft) < 0.5) {
+      return;
+    }
+
+    animateTimelineScrollLeft(scrollContainer, clampedLeft, requestedBehavior);
+
+    timelineUI = normalizeTimelineWorkspaceUIState(
+      {
+        ...timelineUI,
+        viewportLeft: clampedLeft,
+      },
+      session,
+    );
+    saveTimelineWorkspaceUIState(timelineUI, session);
+  };
+
+  const syncTimelineChipActionOverlayPosition = (): void => {
+    const scrollContainer = root.querySelector<HTMLElement>('[data-role="timeline-scroll"]');
+    const overlay = root.querySelector<HTMLElement>('[data-role="timeline-chip-overlay"]');
+    if (!scrollContainer || !overlay) {
+      return;
+    }
+
+    const segmentId = overlay.dataset.segmentId;
+    if (!segmentId) {
+      return;
+    }
+
+    const clip = scrollContainer.querySelector<HTMLElement>(`[data-clip-id="${segmentId}"]`);
+    if (!clip) {
+      return;
+    }
+
+    const scrollRect = scrollContainer.getBoundingClientRect();
+    const clipRect = clip.getBoundingClientRect();
+    const overlayWidth = Math.max(
+      overlay.offsetWidth,
+      TIMELINE_CHIP_ACTIONS.overlayMinWidthPx,
+    );
+    const overlayHeight = Math.max(overlay.offsetHeight, 28);
+    const minLeft = 4;
+    const maxLeft = Math.max(
+      minLeft,
+      scrollContainer.clientWidth - overlayWidth - 4,
+    );
+
+    const preferredRightLeft =
+      clipRect.right - scrollRect.left - overlayWidth - 6;
+    const fallbackLeft = clipRect.left - scrollRect.left + 6;
+    let left =
+      preferredRightLeft < minLeft || preferredRightLeft > maxLeft
+        ? fallbackLeft
+        : preferredRightLeft;
+    left = Math.max(minLeft, Math.min(left, maxLeft));
+
+    const minTop = 4;
+    const maxTop = Math.max(
+      minTop,
+      scrollContainer.clientHeight - overlayHeight - 4,
+    );
+    const top = Math.max(
+      minTop,
+      Math.min(clipRect.top - scrollRect.top + 6, maxTop),
+    );
+
+    overlay.style.left = `${left}px`;
+    overlay.style.top = `${top}px`;
   };
 
   const syncAdvancedCanvas = (): void => {
@@ -3531,6 +3882,7 @@ export function createApp(root: HTMLElement): void {
   const drawEnvelopeFrame = (timestampMs: number): void => {
     const canvas = root.querySelector<HTMLCanvasElement>('[data-role="envelope-canvas"]');
     if (!canvas) {
+      animationFrameId = null;
       return;
     }
 
@@ -3562,6 +3914,11 @@ export function createApp(root: HTMLElement): void {
     const beatMapDetails = root.querySelector<HTMLDetailsElement>('[data-role="beat-map-details"]');
     const envelopeCanvas = root.querySelector<HTMLCanvasElement>('[data-role="envelope-canvas"]');
     const metrics = root.querySelector<HTMLElement>('[data-role="metrics"]');
+
+    if (!envelopeCanvas && animationFrameId !== null) {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
 
     const beatEntries = computeBeatMap(engineState.pairs);
     const primaryEntries = beatEntries.filter((entry) => entry.type !== 'second-order');
@@ -3649,7 +4006,7 @@ export function createApp(root: HTMLElement): void {
     headerShell.innerHTML =
       playbackMode === 'timeline'
         ? renderTimelineHeader(session, shareButtonLabel, playbackMode)
-        : renderManualHeader(currentPresetId, shareButtonLabel, playbackMode);
+        : renderManualHeader(session, shareButtonLabel, playbackMode);
 
     workspaceShell.innerHTML =
       playbackMode === 'timeline'
@@ -3659,7 +4016,13 @@ export function createApp(root: HTMLElement): void {
             carrierDisplayMode,
             composerDraft,
           )
-        : renderManualWorkspace(session, timelineUI.selectedSegmentId, carrierDisplayMode);
+        : renderManualWorkspace(
+            session,
+            timelineUI.selectedSegmentId,
+            carrierDisplayMode,
+            manualDiagnosticsTab,
+            manualDiagnosticsOpen,
+          );
 
     syncHeader();
     syncComposerOutput();
@@ -3717,11 +4080,16 @@ export function createApp(root: HTMLElement): void {
       analysisDockTab?: AnalysisDockTab;
       composerModalOpen?: boolean;
       preserveWorkspace?: boolean;
-      preservePreset?: boolean;
       rerender?: boolean;
     } = {},
   ): void => {
     session = createSessionDefinition(nextSession);
+    if (
+      pendingRemoveSegmentId &&
+      !session.segments.some((segment) => segment.id === pendingRemoveSegmentId)
+    ) {
+      pendingRemoveSegmentId = null;
+    }
 
     ensureTimelineUI(
       options.preserveWorkspace === false
@@ -3759,10 +4127,6 @@ export function createApp(root: HTMLElement): void {
           },
       session,
     );
-
-    if (!options.preservePreset) {
-      currentPresetId = null;
-    }
 
     sequencer.replaceSession(session);
 
@@ -3866,6 +4230,7 @@ export function createApp(root: HTMLElement): void {
           },
           session,
         );
+        syncTimelineChipActionOverlayPosition();
       } else if (target.dataset.role === 'advanced-scroll') {
         timelineUI = normalizeTimelineWorkspaceUIState(
           {
@@ -3879,6 +4244,17 @@ export function createApp(root: HTMLElement): void {
       }
 
       saveTimelineWorkspaceUIState(timelineUI, session);
+    },
+    true,
+  );
+
+  root.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (!(event instanceof PointerEvent)) {
+        return;
+      }
+      lastPointerType = event.pointerType || 'mouse';
     },
     true,
   );
@@ -4355,7 +4731,11 @@ export function createApp(root: HTMLElement): void {
           },
           session,
         );
+      } else {
+        manualDiagnosticsOpen = false;
       }
+      revealedChipActionsSegmentId = null;
+      pendingRemoveSegmentId = null;
       renderLayout();
       persistAppState();
       return;
@@ -4389,6 +4769,25 @@ export function createApp(root: HTMLElement): void {
       });
       renderLayout();
       persistAppState();
+      return;
+    }
+
+    if (action === 'set-manual-diagnostics-tab' && actionTarget.dataset.tab) {
+      const nextTab = actionTarget.dataset.tab as ManualDiagnosticsTab;
+      if (
+        nextTab === 'beat-map' ||
+        nextTab === 'envelope' ||
+        nextTab === 'metrics'
+      ) {
+        manualDiagnosticsTab = nextTab;
+        renderLayout();
+      }
+      return;
+    }
+
+    if (action === 'toggle-manual-diagnostics') {
+      manualDiagnosticsOpen = !manualDiagnosticsOpen;
+      renderLayout();
       return;
     }
 
@@ -4463,9 +4862,11 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'jump-selected') {
+      pendingRemoveSegmentId = null;
       sequencer.seekToSegment(selectedSegmentIndex());
       syncEngineSnapshot();
       renderLayout();
+      ensureTimelineSegmentVisible(selectedSegment().id, 'smooth');
       persistAppState();
       return;
     }
@@ -4644,7 +5045,6 @@ export function createApp(root: HTMLElement): void {
           selectedSegmentId: plan.session.segments[0]?.id ?? null,
           selectedPairId: plan.session.segments[0]?.state.pairs[0]?.id ?? null,
           composerModalOpen: false,
-          preservePreset: false,
         });
       } catch (error) {
         composerExplanation = [
@@ -4659,13 +5059,23 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'select-segment' && actionTarget.dataset.segmentId) {
+      const nextSegmentId = actionTarget.dataset.segmentId;
+      if (lastPointerType === 'touch' || lastPointerType === 'pen') {
+        revealedChipActionsSegmentId = nextSegmentId;
+      } else {
+        revealedChipActionsSegmentId = null;
+      }
+      if (pendingRemoveSegmentId && pendingRemoveSegmentId !== nextSegmentId) {
+        pendingRemoveSegmentId = null;
+      }
       ensureTimelineUI({
-        selectedSegmentId: actionTarget.dataset.segmentId,
+        selectedSegmentId: nextSegmentId,
       });
       if (activePlaybackState().status !== 'playing' && engineState.playbackState !== 'running') {
         applySelectedSegmentToEngine();
       }
       renderLayout();
+      ensureTimelineSegmentVisible(nextSegmentId, 'smooth');
       persistAppState();
       return;
     }
@@ -4681,12 +5091,18 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'seek-segment' && actionTarget.dataset.segmentId) {
+      const nextSegmentId = actionTarget.dataset.segmentId;
       ensureTimelineUI({
-        selectedSegmentId: actionTarget.dataset.segmentId,
+        selectedSegmentId: nextSegmentId,
       });
+      revealedChipActionsSegmentId = nextSegmentId;
+      if (pendingRemoveSegmentId && pendingRemoveSegmentId !== nextSegmentId) {
+        pendingRemoveSegmentId = null;
+      }
       sequencer.seekToSegment(selectedSegmentIndex());
       syncEngineSnapshot();
       renderLayout();
+      ensureTimelineSegmentVisible(nextSegmentId, 'smooth');
       persistAppState();
       return;
     }
@@ -4715,6 +5131,7 @@ export function createApp(root: HTMLElement): void {
           selectedSegmentId: nextSegment.id,
         },
       );
+      revealedChipActionsSegmentId = nextSegment.id;
       return;
     }
 
@@ -4741,23 +5158,56 @@ export function createApp(root: HTMLElement): void {
           selectedSegmentId: nextSegment.id,
         },
       );
+      revealedChipActionsSegmentId = nextSegment.id;
       return;
     }
 
-    if (action === 'remove-segment' && actionTarget.dataset.segmentId && session.segments.length > 1) {
+    if (
+      action === 'request-remove-segment' &&
+      actionTarget.dataset.segmentId &&
+      session.segments.length > 1
+    ) {
+      pendingRemoveSegmentId = actionTarget.dataset.segmentId;
+      revealedChipActionsSegmentId = actionTarget.dataset.segmentId;
+      renderLayout();
+      ensureTimelineSegmentVisible(actionTarget.dataset.segmentId, 'smooth');
+      persistAppState();
+      return;
+    }
+
+    if (
+      action === 'cancel-remove-segment' &&
+      actionTarget.dataset.segmentId
+    ) {
+      if (pendingRemoveSegmentId === actionTarget.dataset.segmentId) {
+        pendingRemoveSegmentId = null;
+      }
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (
+      action === 'confirm-remove-segment' &&
+      actionTarget.dataset.segmentId &&
+      session.segments.length > 1
+    ) {
       const remaining = session.segments.filter((segment) => segment.id !== actionTarget.dataset.segmentId);
+      const nextSelectedId =
+        timelineUI.selectedSegmentId === actionTarget.dataset.segmentId
+          ? remaining[0]?.id ?? null
+          : timelineUI.selectedSegmentId;
       replaceSession(
         createSessionDefinition({
           ...session,
           segments: remaining,
         }),
         {
-          selectedSegmentId:
-            timelineUI.selectedSegmentId === actionTarget.dataset.segmentId
-              ? remaining[0]?.id ?? null
-              : timelineUI.selectedSegmentId,
+          selectedSegmentId: nextSelectedId,
         },
       );
+      pendingRemoveSegmentId = null;
+      revealedChipActionsSegmentId = nextSelectedId;
       return;
     }
 
@@ -4976,46 +5426,6 @@ export function createApp(root: HTMLElement): void {
     }
   });
 
-  root.addEventListener('change', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLSelectElement) || target.dataset.role !== 'preset-select') {
-      return;
-    }
-
-    if (target.value === 'custom') {
-      currentPresetId = null;
-      syncHeader();
-      persistAppState();
-      return;
-    }
-
-    const preset = getPresetById(target.value);
-    if (!preset) {
-      return;
-    }
-
-    currentPresetId = preset.id;
-    session = preset.state.session;
-    composerDraft = preset.state.composer;
-    playbackMode = preset.state.mode;
-    composerExplanation = [];
-    sequencer.load(session);
-    ensureTimelineUI(
-      {
-        tab: 'timeline',
-        inspectorTab: 'segment',
-        selectedSegmentId: session.segments[0]?.id ?? null,
-        selectedPairId: session.segments[0]?.state.pairs[0]?.id ?? null,
-        composerModalOpen: !hasExistingTimeline(session),
-      },
-      session,
-    );
-    sequencer.seekToSegment(selectedSegmentIndex());
-    syncEngineSnapshot();
-    renderLayout();
-    persistAppState();
-  });
-
   window.addEventListener('keydown', (event) => {
     if (
       event.key === 'Escape' &&
@@ -5032,5 +5442,6 @@ export function createApp(root: HTMLElement): void {
 
   window.addEventListener('resize', () => {
     syncDiagnostics();
+    syncTimelineChipActionOverlayPosition();
   });
 }
