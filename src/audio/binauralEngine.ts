@@ -438,6 +438,8 @@ export class BinauralEngine {
 
   private masterGainNode: GainNode | null = null;
 
+  private limiter: DynamicsCompressorNode | null = null;
+
   private noiseGraph: NoiseGraph | null = null;
 
   private pairGraphs = new Map<string, ToneGraph>();
@@ -612,7 +614,16 @@ export class BinauralEngine {
     const context = new AudioContext();
     const masterGainNode = context.createGain();
     masterGainNode.gain.value = this.base.masterGain;
-    masterGainNode.connect(context.destination);
+
+    const limiter = context.createDynamicsCompressor();
+    limiter.threshold.value = -1;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.05;
+    masterGainNode.connect(limiter);
+    limiter.connect(context.destination);
+    this.limiter = limiter;
 
     this.context = context;
     this.masterGainNode = masterGainNode;
