@@ -2172,7 +2172,7 @@ function renderTimelineComposerModal(
   return `
     <div class="composer-modal" data-role="composer-modal">
       <div class="composer-modal__backdrop" data-action="close-composer-modal"></div>
-      <section class="composer-modal__dialog" data-action="composer-modal-surface" role="dialog" aria-modal="true" aria-label="Composer">
+      <section class="composer-modal__dialog" data-action="composer-modal-surface" role="dialog" aria-modal="true" aria-label="Composer" tabindex="-1">
         <div class="composer-modal__header">
           <div>
             <p class="layer-card__eyebrow">Compose</p>
@@ -3272,6 +3272,7 @@ export function createApp(root: HTMLElement): void {
   let headphoneNoticeVisible = !hasSeenHeadphoneNotice();
   let shareButtonLabel = 'Copy share link';
   let shareFeedbackTimeoutId: number | null = null;
+  let composerModalTrigger: HTMLElement | null = null;
   let envelopeDurationSeconds = 5;
   let envelopeSamples = computeEnvelope([], envelopeDurationSeconds, 0);
   let animationFrameId: number | null = null;
@@ -3291,6 +3292,23 @@ export function createApp(root: HTMLElement): void {
   if (!headerShell || !workspaceShell) {
     throw new Error('App shell did not initialize.');
   }
+
+  const showToast = (message: string, durationMs = 2200): void => {
+    let container = document.querySelector<HTMLElement>('.toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'toast-container';
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('is-leaving');
+      toast.addEventListener('transitionend', () => toast.remove());
+    }, durationMs);
+  };
 
   const ensureTimelineUI = (
     partial?: Partial<TimelineWorkspaceUIState>,
@@ -5901,6 +5919,7 @@ export function createApp(root: HTMLElement): void {
         if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(window.location.href);
           shareButtonLabel = 'Link copied';
+          showToast('Link copied to clipboard');
         } else {
           shareButtonLabel = 'Link in address bar';
         }
@@ -5996,10 +6015,14 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'open-composer-modal') {
+      composerModalTrigger = document.activeElement as HTMLElement | null;
       ensureTimelineUI({
         composerModalOpen: true,
       });
+      document.body.classList.add('modal-open');
       renderLayout();
+      const dialog = root.querySelector<HTMLElement>('[role="dialog"]');
+      dialog?.focus();
       persistAppState();
       return;
     }
@@ -6008,6 +6031,9 @@ export function createApp(root: HTMLElement): void {
       ensureTimelineUI({
         composerModalOpen: false,
       });
+      document.body.classList.remove('modal-open');
+      composerModalTrigger?.focus();
+      composerModalTrigger = null;
       renderLayout();
       persistAppState();
       return;
@@ -6343,6 +6369,7 @@ export function createApp(root: HTMLElement): void {
           selectedPairId: plan.session.segments[0]?.state.pairs[0]?.id ?? null,
           composerModalOpen: false,
         });
+        showToast('Timeline generated');
       } catch (error) {
         composerExplanation = [
           error instanceof Error
@@ -6350,6 +6377,7 @@ export function createApp(root: HTMLElement): void {
             : 'Could not generate a timeline from that input yet.',
         ];
         syncComposerOutput();
+        showToast('Could not generate timeline');
       }
       persistAppState();
       return;
@@ -6783,17 +6811,99 @@ export function createApp(root: HTMLElement): void {
     }
   });
 
-  window.addEventListener('keydown', (event) => {
-    if (
-      event.key === 'Escape' &&
-      playbackMode === 'timeline' &&
-      timelineUI.composerModalOpen
-    ) {
-      ensureTimelineUI({
-        composerModalOpen: false,
-      });
+  window.addEventListener('keydown', async (event) => {
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    const isEditing =
+      tag === 'input' ||
+      tag === 'textarea' ||
+      tag === 'select' ||
+      (document.activeElement as HTMLElement)?.isContentEditable;
+
+    // Tab trapping inside composer modal
+    if (event.key === 'Tab' && timelineUI.composerModalOpen) {
+      const dialog = root.querySelector<HTMLElement>('[role="dialog"]');
+      if (dialog) {
+        const focusable = dialog.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
+      return;
+    }
+
+    // Escape: close modal or stop playback
+    if (event.key === 'Escape') {
+      if (playbackMode === 'timeline' && timelineUI.composerModalOpen) {
+        ensureTimelineUI({ composerModalOpen: false });
+        document.body.classList.remove('modal-open');
+        composerModalTrigger?.focus();
+        composerModalTrigger = null;
+        renderLayout();
+        persistAppState();
+        return;
+      }
+      const status = activePlaybackState().status;
+      if (status === 'playing' || status === 'paused') {
+        await sequencer.stop();
+        syncEngineSnapshot();
+        renderLayout();
+        persistAppState();
+        return;
+      }
+    }
+
+    if (isEditing) return;
+
+    // Space: toggle play/pause
+    if (event.key === ' ' || event.code === 'Space') {
+      event.preventDefault();
+      if (playbackMode === 'analysis') return;
+      const status = activePlaybackState().status;
+      if (status === 'playing') {
+        await sequencer.pause();
+      } else if (status === 'paused') {
+        await sequencer.resume();
+      } else {
+        syncSequencerPlaybackTarget();
+        await sequencer.play();
+      }
+      syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      return;
+    }
+
+    // Arrow keys: segment navigation in timeline mode
+    if (
+      playbackMode === 'timeline' &&
+      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+    ) {
+      const segments = session.segments;
+      if (segments.length === 0) return;
+      const currentIdx = segments.findIndex(
+        (s) => s.id === timelineUI.selectedSegmentId,
+      );
+      let nextIdx: number;
+      if (event.key === 'ArrowLeft') {
+        nextIdx = currentIdx <= 0 ? segments.length - 1 : currentIdx - 1;
+      } else {
+        nextIdx =
+          currentIdx >= segments.length - 1 ? 0 : currentIdx + 1;
+      }
+      ensureTimelineUI({ selectedSegmentId: segments[nextIdx].id });
+      renderLayout();
+      persistAppState();
+      return;
     }
   });
 
