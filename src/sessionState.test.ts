@@ -206,10 +206,10 @@ describe('share state encoding', () => {
     expect(encodedV5.length).toBeLessThan(encodedV4.length);
   });
 
-  it('creates a default timeline when no persisted state is present', () => {
+  it('creates a default visualizer session when no persisted state is present', () => {
     const state = createInitialShareableState();
 
-    expect(state.mode).toBe('timeline');
+    expect(state.mode).toBe('visualizer');
     expect(state.session.label).toBe('Soft Arrival');
     expect(state.session.loop).toBe(true);
     expect(state.session.segments).toHaveLength(1);

@@ -72,9 +72,21 @@ import {
 } from './timelineWorkspace';
 import {
   DEFAULT_VISUALIZER_ID,
-  getVisualizerModule,
+  PixiVisualizerRuntime,
+  bandOrder,
   VISUALIZER_REGISTRY,
 } from './visualizers/registry';
+import {
+  advanceBandActivity,
+  createEmptyBandActivity,
+  type VisualizerBand,
+  type VisualizerBandActivity,
+} from './visualizers/bands';
+import {
+  computeSyntheticStft,
+  sampleLogBands,
+  synthesizeStereoSignal,
+} from './visualizers/signal';
 
 const UI_LIMITS = {
   carrierSliderMin: 40,
@@ -111,6 +123,8 @@ const TIMELINE_ZOOM = {
   default: 1,
 };
 
+const VISUALIZER_PIXI_INIT_TIMEOUT_MS = 2400;
+
 const ADVANCED_LAYOUT = {
   labelWidthPx: 118,
   rulerHeightPx: 32,
@@ -121,6 +135,7 @@ const ADVANCED_LAYOUT = {
 
 type TimelineDragInsertPosition = 'before' | 'after';
 type AppViewMode = PlaybackMode | 'analysis';
+type VisualizerRendererMode = 'pixi-webgl' | 'compatibility';
 
 function escapeHtml(value: string): string {
   return value
@@ -3023,9 +3038,37 @@ function renderVisualizerTransport(playbackState: SessionPlaybackState): string 
   `;
 }
 
+function renderVisualizerBandLeds(
+  bandActivity: VisualizerBandActivity,
+): string {
+  return `
+    <div class="visualizer-band-leds" data-role="visualizer-band-leds">
+      ${bandOrder()
+        .map(
+          (band) => `
+            <span
+              class="visualizer-band-led ${bandActivity.activeBands.includes(band) ? 'is-active' : ''} ${bandActivity.dominant === band ? 'is-dominant' : ''}"
+              data-band="${band}"
+              title="${band.toUpperCase()}"
+              aria-label="${band} band"
+            >
+              <span class="visualizer-band-led__dot"></span>
+              <span class="visualizer-band-led__label">${band}</span>
+            </span>
+          `,
+        )
+        .join('')}
+    </div>
+  `;
+}
+
 function renderVisualizerWorkspace(
   visualizerId: string,
+  visualizerIntensity: number,
+  bandActivity: VisualizerBandActivity,
 ): string {
+  const intensity = clampNumeric(visualizerIntensity, 0, 1);
+
   return `
     <section class="panel panel--workspace panel--workspace-visualizer">
       <section class="transport-row" data-role="visualizer-transport"></section>
@@ -3036,20 +3079,43 @@ function renderVisualizerWorkspace(
             <p class="layer-card__eyebrow">Visualizer</p>
             <h3>Playback view</h3>
           </div>
-          <label class="select-field select-field--compact visualizer-surface__select">
-            <span>Style</span>
-            <select data-input="visualizer-module">
-              ${VISUALIZER_REGISTRY.map(
-                (module) => `
-                  <option value="${module.id}" ${
-                    module.id === visualizerId ? 'selected' : ''
-                  }>
-                    ${escapeHtml(module.label)}
-                  </option>
-                `,
-              ).join('')}
-            </select>
-          </label>
+          <div class="visualizer-surface__controls">
+            <div class="visualizer-renderer-status" data-role="visualizer-renderer-status">
+              Renderer: Pixi
+            </div>
+
+            ${renderVisualizerBandLeds(bandActivity)}
+
+            <label class="select-field select-field--compact visualizer-surface__select">
+              <span>Style</span>
+              <select data-input="visualizer-module">
+                ${VISUALIZER_REGISTRY.map(
+                  (module) => `
+                    <option value="${module.id}" ${
+                      module.id === visualizerId ? 'selected' : ''
+                    }>
+                      ${escapeHtml(module.label)}
+                    </option>
+                  `,
+                ).join('')}
+              </select>
+            </label>
+
+            <label class="control visualizer-surface__intensity">
+              <span class="control__row">
+                <span>Intensity</span>
+                <output data-role="visualizer-intensity-output">${formatPercent(intensity)}</output>
+              </span>
+              <input
+                data-input="visualizer-intensity"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="${intensity.toFixed(2)}"
+              />
+            </label>
+          </div>
         </div>
 
         <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280"></canvas>
@@ -3176,6 +3242,26 @@ export function createApp(root: HTMLElement): void {
   let manualDiagnosticsTab: ManualDiagnosticsTab = 'beat-map';
   let manualDiagnosticsOpen = false;
   let activeVisualizerId = DEFAULT_VISUALIZER_ID;
+  let visualizerIntensity = 0.62;
+  let lastVisualizerFrameMs: number | null = null;
+  let visualizerPixiRuntime: PixiVisualizerRuntime | null = null;
+  let visualizerPixiInitPromise: Promise<PixiVisualizerRuntime | null> | null = null;
+  let visualizerPixiInitStartedAtMs: number | null = null;
+  let visualizerPixiInitToken = 0;
+  let visualizerPixiFailed = false;
+  let visualizerPixiErrorLogged = false;
+  let visualizerRendererMode: VisualizerRendererMode = 'pixi-webgl';
+  let visualizerLastRendererError: string | null = null;
+  let visualizerCanvasRef: HTMLCanvasElement | null = null;
+  let visualizerBandActivity = createEmptyBandActivity();
+  const ribbonFallbackStateByCanvas = new WeakMap<
+    HTMLCanvasElement,
+    {
+      left: Float32Array;
+      right: Float32Array;
+      mid: Float32Array;
+    }
+  >();
   let revealedChipActionsSegmentId: string | null = null;
   let pendingRemoveSegmentId: string | null = null;
   let draggedSegmentId: string | null = null;
@@ -4082,19 +4168,585 @@ export function createApp(root: HTMLElement): void {
     readout.textContent = `${formatSeconds(playbackState.totalElapsed)} / ${formatSeconds(playbackState.totalDuration)} · Segment ${playbackState.currentSegmentIndex + 1} · ${playbackState.currentSegmentPhase}`;
   };
 
-  const syncVisualizerCanvas = (): void => {
-    const canvas = root.querySelector<HTMLCanvasElement>('[data-role="visualizer-canvas"]');
-    if (!canvas) {
+  const syncVisualizerBandLeds = (): void => {
+    const container = root.querySelector<HTMLElement>('[data-role="visualizer-band-leds"]');
+    if (!container) {
       return;
     }
 
-    const module = getVisualizerModule(activeVisualizerId);
-    module.renderFrame({
-      canvas,
+    const leds = container.querySelectorAll<HTMLElement>('[data-band]');
+    leds.forEach((led) => {
+      const band = led.dataset.band as VisualizerBand | undefined;
+      if (!band) {
+        return;
+      }
+      const level = visualizerBandActivity.levels[band] ?? 0;
+      led.style.setProperty('--band-level', level.toFixed(3));
+      led.classList.toggle('is-active', visualizerBandActivity.activeBands.includes(band));
+      led.classList.toggle('is-dominant', visualizerBandActivity.dominant === band);
+    });
+  };
+
+  const normalizeVisualizerRendererError = (error: unknown): string => {
+    if (error instanceof Error && error.message.trim().length > 0) {
+      return error.message.trim();
+    }
+    if (typeof error === 'string' && error.trim().length > 0) {
+      return error.trim();
+    }
+    return 'Unknown visualizer renderer error';
+  };
+
+  const syncVisualizerRuntimeStatus = (): void => {
+    const initPending =
+      visualizerPixiInitPromise !== null &&
+      visualizerPixiRuntime === null &&
+      !visualizerPixiFailed;
+    const status = root.querySelector<HTMLElement>(
+      '[data-role="visualizer-renderer-status"]',
+    );
+    if (status) {
+      status.textContent =
+        visualizerRendererMode === 'pixi-webgl'
+          ? initPending
+            ? 'Renderer: Pixi (initializing)'
+            : 'Renderer: Pixi'
+          : 'Renderer: Compatibility';
+      status.dataset.mode = visualizerRendererMode;
+      status.dataset.pending = initPending ? 'true' : 'false';
+      if (visualizerLastRendererError) {
+        status.title = visualizerLastRendererError;
+      } else {
+        status.removeAttribute('title');
+      }
+    }
+
+    (
+      window as Window & {
+        __neurotoneViz?: {
+          rendererMode: VisualizerRendererMode;
+          activeVisualizerId: string;
+          initPending: boolean;
+          lastRendererError?: string;
+        };
+      }
+    ).__neurotoneViz = {
+      rendererMode: visualizerRendererMode,
+      activeVisualizerId,
+      initPending,
+      ...(visualizerLastRendererError
+        ? { lastRendererError: visualizerLastRendererError }
+        : {}),
+    };
+  };
+
+  const destroyVisualizerRuntime = (): void => {
+    if (visualizerPixiRuntime) {
+      try {
+        visualizerPixiRuntime.destroy();
+      } catch {
+        // Runtime teardown failures are non-fatal; we always continue with renderer reset.
+      }
+      visualizerPixiRuntime = null;
+    }
+    visualizerPixiInitPromise = null;
+    visualizerPixiInitStartedAtMs = null;
+  };
+
+  const resetVisualizerRenderer = (): void => {
+    visualizerPixiInitToken += 1;
+    destroyVisualizerRuntime();
+    visualizerPixiFailed = false;
+    visualizerPixiErrorLogged = false;
+    visualizerRendererMode = 'pixi-webgl';
+    visualizerLastRendererError = null;
+    syncVisualizerRuntimeStatus();
+  };
+
+  const switchVisualizerToCompatibility = (
+    error: unknown,
+    contextMessage: string,
+  ): void => {
+    visualizerPixiInitToken += 1;
+    destroyVisualizerRuntime();
+    visualizerPixiFailed = true;
+    visualizerRendererMode = 'compatibility';
+    visualizerLastRendererError = normalizeVisualizerRendererError(error);
+    if (!visualizerPixiErrorLogged) {
+      console.warn(contextMessage, error);
+      visualizerPixiErrorLogged = true;
+    }
+    syncVisualizerRuntimeStatus();
+  };
+
+  const drawSignalTrace = (
+    context: CanvasRenderingContext2D,
+    values: Float32Array,
+    width: number,
+    centerY: number,
+    amplitude: number,
+  ): void => {
+    if (values.length === 0) {
+      return;
+    }
+    const denominator = Math.max(values.length - 1, 1);
+    context.beginPath();
+    for (let index = 0; index < values.length; index += 1) {
+      const x = (index / denominator) * width;
+      const y = centerY - values[index]! * amplitude;
+      if (index === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    }
+    context.stroke();
+  };
+
+  const drawEnvelopeFieldFallback = (
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    nowMs: number,
+  ): void => {
+    const centerY = height * 0.52;
+    const signal = synthesizeStereoSignal(engineState.pairs, {
+      sampleCount: Math.max(280, Math.floor(width * 1.1)),
+      windowSeconds: Math.max(4.6, envelopeDurationSeconds * 1.04),
+      centerTimeSeconds: activePlaybackState().totalElapsed,
+      motionScale: 0.9,
+    });
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = 'rgba(250,246,238,0.88)';
+    context.fillRect(0, 0, width, height);
+    context.save();
+    context.globalAlpha = 0.16;
+    context.fillStyle = 'rgba(170,122,85,0.18)';
+    context.fillRect(0, height * 0.18, width, height * 0.66);
+    context.restore();
+
+    context.lineJoin = 'round';
+    context.lineCap = 'round';
+    context.strokeStyle = 'rgba(177,122,76,0.22)';
+    context.lineWidth = 4.2;
+    drawSignalTrace(context, signal.mono, width, centerY, height * 0.24);
+    context.strokeStyle = 'rgba(132,74,34,0.82)';
+    context.lineWidth = 1.8;
+    drawSignalTrace(context, signal.mono, width, centerY, height * 0.26);
+
+    const haloX = width * (0.82 + Math.sin(nowMs / 9000) * 0.03);
+    const haloY = height * 0.24;
+    const haloRadius = Math.max(16, Math.min(width, height) * 0.06);
+    const gradient = context.createRadialGradient(
+      haloX,
+      haloY,
+      haloRadius * 0.1,
+      haloX,
+      haloY,
+      haloRadius * 1.8,
+    );
+    gradient.addColorStop(0, 'rgba(166,108,60,0.28)');
+    gradient.addColorStop(1, 'rgba(166,108,60,0)');
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.arc(haloX, haloY, haloRadius * 1.8, 0, Math.PI * 2);
+    context.fill();
+  };
+
+  const drawStereoDriftRibbonsFallback = (
+    canvas: HTMLCanvasElement,
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    nowMs: number,
+  ): void => {
+    const intensity = clampNumeric(visualizerIntensity, 0, 1);
+    const signal = synthesizeStereoSignal(engineState.pairs, {
+      sampleCount: Math.max(420, Math.floor(width * 1.35)),
+      windowSeconds: 4.4,
+      centerTimeSeconds: activePlaybackState().totalElapsed,
+      motionScale: 0.78,
+    });
+    const previous = ribbonFallbackStateByCanvas.get(canvas);
+    const state =
+      previous &&
+      previous.left.length === signal.left.length &&
+      previous.right.length === signal.right.length
+        ? previous
+        : {
+            left: signal.left.slice(),
+            right: signal.right.slice(),
+            mid: new Float32Array(signal.left.length),
+          };
+    const temporalAlpha = 0.14 + intensity * 0.12;
+    for (let index = 0; index < signal.left.length; index += 1) {
+      const leftPrev = index > 0 ? signal.left[index - 1]! : signal.left[index]!;
+      const leftNext =
+        index < signal.left.length - 1 ? signal.left[index + 1]! : signal.left[index]!;
+      const rightPrev = index > 0 ? signal.right[index - 1]! : signal.right[index]!;
+      const rightNext =
+        index < signal.right.length - 1 ? signal.right[index + 1]! : signal.right[index]!;
+      const leftSpatial = leftPrev * 0.2 + signal.left[index]! * 0.6 + leftNext * 0.2;
+      const rightSpatial = rightPrev * 0.2 + signal.right[index]! * 0.6 + rightNext * 0.2;
+      state.left[index] = state.left[index]! * (1 - temporalAlpha) + leftSpatial * temporalAlpha;
+      state.right[index] =
+        state.right[index]! * (1 - temporalAlpha) + rightSpatial * temporalAlpha;
+      state.mid[index] = (state.left[index]! + state.right[index]!) * 0.5;
+    }
+    ribbonFallbackStateByCanvas.set(canvas, state);
+
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = 'rgba(250,246,238,0.9)';
+    context.fillRect(0, 0, width, height);
+    const drift = Math.sin(nowMs / 7800) * height * 0.024;
+    const spread = height * (0.34 + intensity * 0.1);
+    const centerY = height * 0.5;
+    const leftMid = centerY - spread * 0.5 + drift;
+    const rightMid = centerY + spread * 0.5 - drift;
+    const amplitude = height * (0.205 + intensity * 0.155);
+    const washGradient = context.createLinearGradient(0, height * 0.08, 0, height * 0.92);
+    washGradient.addColorStop(0, 'rgba(116,176,188,0.1)');
+    washGradient.addColorStop(1, 'rgba(167,144,212,0.1)');
+    context.fillStyle = washGradient;
+    context.fillRect(0, height * 0.08, width, height * 0.84);
+
+    context.lineJoin = 'round';
+    context.lineCap = 'round';
+    context.strokeStyle = `rgba(116,176,188,${(0.18 + intensity * 0.09).toFixed(3)})`;
+    context.lineWidth = 7.5 + intensity * 2.5;
+    drawSignalTrace(context, state.left, width, leftMid, amplitude * 1.05);
+    context.strokeStyle = `rgba(167,144,212,${(0.15 + intensity * 0.08).toFixed(3)})`;
+    context.lineWidth = 7.5 + intensity * 2.5;
+    drawSignalTrace(context, state.right, width, rightMid, amplitude * 0.98);
+
+    context.strokeStyle = `rgba(95,152,163,${(0.64 + intensity * 0.16).toFixed(3)})`;
+    context.lineWidth = 2.4 + intensity * 1.05;
+    drawSignalTrace(context, state.left, width, leftMid, amplitude);
+    context.strokeStyle = `rgba(135,114,181,${(0.6 + intensity * 0.15).toFixed(3)})`;
+    context.lineWidth = 2.2 + intensity * 1.05;
+    drawSignalTrace(context, state.right, width, rightMid, amplitude * 0.96);
+
+    context.strokeStyle = `rgba(153,101,61,${(0.18 + intensity * 0.1).toFixed(3)})`;
+    context.lineWidth = 1.2;
+    drawSignalTrace(context, state.mid, width, centerY, amplitude * 0.5);
+
+    const haloX = width * 0.82;
+    const haloY = height * 0.26;
+    const haloRadius = Math.max(18, Math.min(width, height) * 0.16);
+    const haloGradient = context.createRadialGradient(
+      haloX,
+      haloY,
+      haloRadius * 0.1,
+      haloX,
+      haloY,
+      haloRadius * 1.8,
+    );
+    haloGradient.addColorStop(0, 'rgba(166,108,60,0.22)');
+    haloGradient.addColorStop(1, 'rgba(166,108,60,0)');
+    context.fillStyle = haloGradient;
+    context.beginPath();
+    context.arc(haloX, haloY, haloRadius * 1.8, 0, Math.PI * 2);
+    context.fill();
+  };
+
+  const drawSpectralAuroraFallback = (
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+  ): void => {
+    const intensity = clampNumeric(visualizerIntensity, 0, 1);
+    const top = height * 0.08;
+    const bottom = height * 0.94;
+    const drawable = bottom - top;
+    const signal = synthesizeStereoSignal(engineState.pairs, {
+      sampleCount: Math.max(2176, Math.floor(width * 2.4)),
+      windowSeconds: 1.35,
+      centerTimeSeconds: activePlaybackState().totalElapsed,
+      motionScale: 0.86,
+    });
+    const stft = computeSyntheticStft(signal.mono, 96, 12);
+    const bands = sampleLogBands(stft, 42);
+
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = 'rgba(249,245,238,0.93)';
+    context.fillRect(0, 0, width, height);
+    const gradient = context.createLinearGradient(0, top, 0, bottom);
+    gradient.addColorStop(0, 'rgba(124,164,188,0.16)');
+    gradient.addColorStop(0.45, 'rgba(184,140,99,0.14)');
+    gradient.addColorStop(1, 'rgba(120,191,134,0.18)');
+    context.fillStyle = gradient;
+    context.fillRect(0, top, width, drawable);
+
+    const frameSpan = Math.max(bands.frameCount - 1, 1);
+    const bandSpan = Math.max(bands.bandCount - 1, 1);
+    const enhanced = new Float32Array(bands.values.length);
+    const bandPresence = new Float32Array(bands.bandCount);
+
+    for (let frameIndex = 0; frameIndex < bands.frameCount; frameIndex += 1) {
+      for (let bandIndex = 0; bandIndex < bands.bandCount; bandIndex += 1) {
+        const baseIndex = frameIndex * bands.bandCount + bandIndex;
+        const bandRatio = bandIndex / bandSpan;
+        const center = bands.values[baseIndex] ?? 0;
+        const prev = bandIndex > 0 ? (bands.values[baseIndex - 1] ?? center) : center;
+        const next =
+          bandIndex < bands.bandCount - 1 ? (bands.values[baseIndex + 1] ?? center) : center;
+        const spread = prev * 0.24 + center * 0.52 + next * 0.24;
+        const tilt = 0.72 + bandRatio * 2.1;
+        const boosted = Math.min(
+          1,
+          Math.pow(Math.max(0, spread * tilt), 0.62) * (1.1 + intensity * 1.15),
+        );
+        enhanced[baseIndex] = boosted;
+        bandPresence[bandIndex] += boosted;
+      }
+    }
+
+    for (let bandIndex = 0; bandIndex < bandPresence.length; bandIndex += 1) {
+      bandPresence[bandIndex] = bandPresence[bandIndex]! / Math.max(1, bands.frameCount);
+    }
+
+    context.lineJoin = 'round';
+    context.lineCap = 'round';
+    for (let bandIndex = 0; bandIndex < bands.bandCount; bandIndex += 1) {
+      const bandRatio = bandIndex / bandSpan;
+      const hue = 205 - bandRatio * 138;
+      const presence = Math.min(1, bandPresence[bandIndex]! * 1.6);
+      const floorLift = presence * (0.18 + intensity * 0.16);
+      const baseY = bottom - bandRatio * drawable;
+
+      context.strokeStyle = `hsla(${hue.toFixed(1)}, 62%, 56%, ${(0.18 + presence * 0.42).toFixed(3)})`;
+      context.lineWidth = 2.2 + intensity * 2.3;
+      context.beginPath();
+      for (let frameIndex = 0; frameIndex < bands.frameCount; frameIndex += 1) {
+        const x = (frameIndex / frameSpan) * width;
+        const lifted = Math.max(
+          floorLift,
+          enhanced[frameIndex * bands.bandCount + bandIndex] ?? floorLift,
+        );
+        const y = baseY - lifted * (20 + intensity * 34);
+        if (frameIndex === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
+      }
+      context.stroke();
+
+      context.strokeStyle = `hsla(${hue.toFixed(1)}, 70%, 66%, ${(0.16 + presence * 0.56).toFixed(3)})`;
+      context.lineWidth = 1.05 + intensity * 0.75;
+      context.beginPath();
+      for (let frameIndex = 0; frameIndex < bands.frameCount; frameIndex += 1) {
+        const x = (frameIndex / frameSpan) * width;
+        const lifted = Math.max(
+          floorLift,
+          enhanced[frameIndex * bands.bandCount + bandIndex] ?? floorLift,
+        );
+        const y = baseY - lifted * (20 + intensity * 34);
+        if (frameIndex === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
+      }
+      context.stroke();
+    }
+  };
+
+  const drawVisualizerFallback = (
+    canvas: HTMLCanvasElement,
+    moduleId: string,
+    nowMs: number,
+  ): HTMLCanvasElement | null => {
+    let drawCanvas = canvas;
+    let context = drawCanvas.getContext('2d');
+    if (!context) {
+      const replacement = canvas.cloneNode(false) as HTMLCanvasElement;
+      replacement.className = canvas.className;
+      replacement.height = canvas.height || 280;
+      replacement.setAttribute('data-role', 'visualizer-canvas');
+      canvas.replaceWith(replacement);
+      drawCanvas = replacement;
+      visualizerCanvasRef = replacement;
+      context = drawCanvas.getContext('2d');
+      if (!context) {
+        return null;
+      }
+    }
+
+    const measured = drawCanvas.getBoundingClientRect();
+    const width = Math.max(
+      360,
+      Math.floor(
+        Number.isFinite(measured.width) && measured.width > 0
+          ? measured.width
+          : drawCanvas.offsetWidth || drawCanvas.clientWidth || 860,
+      ),
+    );
+    const height = Math.max(
+      260,
+      Math.floor(
+        Number.isFinite(measured.height) && measured.height > 0
+          ? measured.height
+          : drawCanvas.offsetHeight || drawCanvas.clientHeight || 360,
+      ),
+    );
+    if (drawCanvas.width !== width) {
+      drawCanvas.width = width;
+    }
+    if (drawCanvas.height !== height) {
+      drawCanvas.height = height;
+    }
+
+    if (moduleId === 'stereo-bloom-orb') {
+      drawStereoDriftRibbonsFallback(drawCanvas, context, width, height, nowMs);
+      return drawCanvas;
+    }
+
+    if (moduleId === 'spectral-aurora') {
+      drawSpectralAuroraFallback(context, width, height);
+      return drawCanvas;
+    }
+
+    drawEnvelopeFieldFallback(context, width, height, nowMs);
+    return drawCanvas;
+  };
+
+  const syncVisualizerCanvas = (nowMs = performance.now()): void => {
+    visualizerBandActivity = advanceBandActivity(
+      visualizerBandActivity,
+      computeBeatMap(engineState.pairs),
+      0.2,
+    );
+    syncVisualizerBandLeds();
+
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-role="visualizer-canvas"]');
+    if (!canvas) {
+      lastVisualizerFrameMs = null;
+      visualizerCanvasRef = null;
+      destroyVisualizerRuntime();
+      syncVisualizerRuntimeStatus();
+      return;
+    }
+
+    if (canvas !== visualizerCanvasRef) {
+      visualizerCanvasRef = canvas;
+      resetVisualizerRenderer();
+    }
+
+    const deltaMs =
+      lastVisualizerFrameMs === null
+        ? 16.67
+        : clampNumeric(nowMs - lastVisualizerFrameMs, 0, 250);
+    lastVisualizerFrameMs = nowMs;
+
+    const measured = canvas.getBoundingClientRect();
+    const width = Math.max(
+      360,
+      Math.floor(
+        Number.isFinite(measured.width) && measured.width > 0
+          ? measured.width
+          : canvas.offsetWidth || canvas.clientWidth || 860,
+      ),
+    );
+    const height = Math.max(
+      260,
+      Math.floor(
+        Number.isFinite(measured.height) && measured.height > 0
+          ? measured.height
+          : canvas.offsetHeight || canvas.clientHeight || 360,
+      ),
+    );
+    const frame = {
       engineState,
       playbackState: activePlaybackState(),
       durationSeconds: envelopeDurationSeconds,
-    });
+      nowMs,
+      deltaMs,
+      intensity: visualizerIntensity,
+      bandActivity: visualizerBandActivity,
+    };
+
+    if (visualizerPixiFailed) {
+      drawVisualizerFallback(canvas, activeVisualizerId, nowMs);
+      syncVisualizerRuntimeStatus();
+      return;
+    }
+
+    if (visualizerPixiRuntime) {
+      try {
+        visualizerPixiRuntime.resize(width, height);
+        visualizerPixiRuntime.render(activeVisualizerId, frame);
+        visualizerRendererMode = 'pixi-webgl';
+        visualizerLastRendererError = null;
+        syncVisualizerRuntimeStatus();
+      } catch (error) {
+        switchVisualizerToCompatibility(
+          error,
+          'Visualizer renderer switched to compatibility mode.',
+        );
+        drawVisualizerFallback(canvas, activeVisualizerId, nowMs);
+      }
+      return;
+    }
+
+    if (
+      visualizerPixiInitPromise &&
+      visualizerPixiInitStartedAtMs !== null &&
+      nowMs - visualizerPixiInitStartedAtMs > VISUALIZER_PIXI_INIT_TIMEOUT_MS
+    ) {
+      switchVisualizerToCompatibility(
+        new Error(
+          `PIXI initialization timed out after ${VISUALIZER_PIXI_INIT_TIMEOUT_MS}ms.`,
+        ),
+        'Visualizer renderer timed out during initialization. Using compatibility mode.',
+      );
+      drawVisualizerFallback(canvas, activeVisualizerId, nowMs);
+      return;
+    }
+
+    if (!visualizerPixiInitPromise) {
+      const initToken = ++visualizerPixiInitToken;
+      visualizerPixiInitStartedAtMs = nowMs;
+      visualizerPixiInitPromise = PixiVisualizerRuntime.create(canvas, width, height)
+        .then((runtime) => {
+          if (initToken !== visualizerPixiInitToken) {
+            runtime.destroy();
+            return null;
+          }
+          if (!root.contains(canvas) || canvas !== visualizerCanvasRef) {
+            runtime.destroy();
+            visualizerPixiInitPromise = null;
+            return null;
+          }
+          visualizerPixiRuntime = runtime;
+          visualizerRendererMode = 'pixi-webgl';
+          visualizerLastRendererError = null;
+          visualizerPixiInitPromise = null;
+          visualizerPixiInitStartedAtMs = null;
+          syncVisualizerRuntimeStatus();
+          requestAnimationFrame(() => syncVisualizerCanvas(performance.now()));
+          return runtime;
+        })
+        .catch((error) => {
+          if (initToken !== visualizerPixiInitToken) {
+            return null;
+          }
+          switchVisualizerToCompatibility(
+            error,
+            'Visualizer renderer failed to initialize. Using compatibility mode.',
+          );
+          const liveCanvas =
+            root.querySelector<HTMLCanvasElement>('[data-role="visualizer-canvas"]') ??
+            canvas;
+          drawVisualizerFallback(liveCanvas, activeVisualizerId, performance.now());
+          return null;
+        });
+    }
+
+    // Keep this canvas untouched while PIXI initialization is pending.
+    // Drawing a 2D fallback here can lock the context and cause WebGL init to fail.
+    syncVisualizerRuntimeStatus();
+    return;
   };
 
   const syncTimelinePlaybackVisuals = (): void => {
@@ -4370,7 +5022,11 @@ export function createApp(root: HTMLElement): void {
             composerDraft,
           )
         : playbackMode === 'visualizer'
-          ? renderVisualizerWorkspace(activeVisualizerId)
+          ? renderVisualizerWorkspace(
+              activeVisualizerId,
+              visualizerIntensity,
+              visualizerBandActivity,
+            )
           : renderManualWorkspace(
               session,
               timelineUI.selectedSegmentId,
@@ -4786,6 +5442,19 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
+    if (inputKey === 'visualizer-intensity' && target instanceof HTMLInputElement) {
+      visualizerIntensity = clampNumeric(Number(target.value), 0, 1);
+      target.value = visualizerIntensity.toFixed(2);
+      const output = root.querySelector<HTMLOutputElement>(
+        '[data-role="visualizer-intensity-output"]',
+      );
+      if (output) {
+        output.value = formatPercent(visualizerIntensity);
+      }
+      syncVisualizerCanvas();
+      return;
+    }
+
     if (inputKey === 'session-loop') {
       replaceSession(
         createSessionDefinition({
@@ -5034,6 +5703,9 @@ export function createApp(root: HTMLElement): void {
 
     if (inputKey === 'visualizer-module' && target instanceof HTMLSelectElement) {
       activeVisualizerId = target.value;
+      if (visualizerPixiFailed) {
+        resetVisualizerRenderer();
+      }
       syncVisualizerCanvas();
       persistAppState();
       return;
