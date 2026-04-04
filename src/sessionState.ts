@@ -15,7 +15,7 @@ import {
 export const SESSION_STORAGE_KEY = 'neurotone.session.v4';
 export const HEADPHONE_NOTICE_KEY = 'neurotone.headphone-notice.v1';
 
-export type PlaybackMode = 'manual' | 'timeline';
+export type PlaybackMode = 'timeline' | 'visualizer';
 
 export interface ComposerDraft {
   label: string;
@@ -77,7 +77,7 @@ interface CompactSessionV5 {
 }
 
 interface CompactShareStateV5 {
-  m?: 't';
+  m?: 't' | 'v';
   s: CompactSessionV5;
 }
 
@@ -106,17 +106,85 @@ function createDefaultComposerDraft(): ComposerDraft {
 
 function createDefaultSession(): SessionDefinition {
   return createSessionDefinition({
-    label: 'Manual session',
-    loop: false,
-    metadata: {
-      source: 'manual',
-    },
+    label: 'Soft Arrival',
+    loop: true,
     segments: [
       createSessionSegment({
         label: 'Segment 1',
-        holdDuration: 18,
+        holdDuration: 60,
         transitionDuration: 0,
-        state: sanitizeSessionSoundState({}),
+        state: sanitizeSessionSoundState({
+          pairs: [
+            {
+              id: 'soft-arrival-a',
+              carrierHz: 195.99771799087463,
+              beatHz: 1,
+              gain: 0.4,
+            },
+            {
+              id: 'soft-arrival-b',
+              carrierHz: 96,
+              beatHz: 1,
+              gain: 0.36,
+            },
+          ],
+          masterGain: 0.1,
+          noise: {
+            enabled: true,
+            volume: 0.26,
+            model: 'surf',
+          },
+        }),
+        overrides: [
+          {
+            id: 'soft-arrival-beat-a',
+            label: 'Beat (Layer 1)',
+            target: 'pair:soft-arrival-a.beatHz',
+            interpolation: 'linear',
+            enabled: true,
+            keyframes: [
+              { id: 'soft-arrival-beat-a-1', time: 0, value: 1 },
+              { id: 'soft-arrival-beat-a-2', time: 29.6, value: 40 },
+              { id: 'soft-arrival-beat-a-3', time: 60, value: 1 },
+            ],
+          },
+          {
+            id: 'soft-arrival-beat-b',
+            label: 'Beat (Layer 2)',
+            target: 'pair:soft-arrival-b.beatHz',
+            interpolation: 'linear',
+            enabled: true,
+            keyframes: [
+              { id: 'soft-arrival-beat-b-1', time: 0, value: 3 },
+              { id: 'soft-arrival-beat-b-2', time: 29.7, value: 1 },
+              { id: 'soft-arrival-beat-b-3', time: 60, value: 2.8 },
+            ],
+          },
+          {
+            id: 'soft-arrival-carrier-b',
+            label: 'Carrier (Layer 2)',
+            target: 'pair:soft-arrival-b.carrierHz',
+            interpolation: 'linear',
+            enabled: true,
+            keyframes: [
+              {
+                id: 'soft-arrival-carrier-b-1',
+                time: 1.6,
+                value: 41.20344461410875,
+              },
+              {
+                id: 'soft-arrival-carrier-b-2',
+                time: 29.5,
+                value: 73.41619197935188,
+              },
+              {
+                id: 'soft-arrival-carrier-b-3',
+                time: 57,
+                value: 41.20344461410875,
+              },
+            ],
+          },
+        ],
       }),
     ],
   });
@@ -132,7 +200,7 @@ export function normalizeShareableState(
 
   return {
     presetId: input.presetId ?? null,
-    mode: input.mode === 'timeline' ? 'timeline' : 'manual',
+    mode: input.mode === 'visualizer' ? 'visualizer' : 'timeline',
     session,
     composer: {
       ...createDefaultComposerDraft(),
@@ -204,7 +272,7 @@ function compactShareStateV5(state: ShareableState): CompactShareStateV5 {
   const normalized = normalizeShareableState(state);
 
   return {
-    m: normalized.mode === 'timeline' ? 't' : undefined,
+    m: normalized.mode === 'visualizer' ? 'v' : 't',
     s: {
       l:
         normalized.session.label &&
@@ -330,9 +398,37 @@ function expandCompactShareStateV5(
   });
 
   return {
-    mode: input.m === 't' ? 'timeline' : 'manual',
+    mode: input.m === 'v' ? 'visualizer' : 'timeline',
     session: expandedSession,
   };
+}
+
+export function decodeInitialViewHintFromHash(
+  hash: string,
+): 'analysis' | null {
+  const trimmedHash = hash.startsWith('#') ? hash.slice(1) : hash;
+  if (!trimmedHash) {
+    return null;
+  }
+
+  try {
+    const params = new URLSearchParams(trimmedHash);
+    const version = params.get('v');
+    const compressed = params.get('z');
+    if (version !== '5' || !compressed) {
+      return null;
+    }
+
+    const decompressed = decompressFromEncodedURIComponent(compressed);
+    if (!decompressed) {
+      return null;
+    }
+
+    const parsed = JSON.parse(decompressed) as Partial<CompactShareStateV5>;
+    return parsed.m === undefined ? 'analysis' : null;
+  } catch {
+    return null;
+  }
 }
 
 export function encodeShareableState(state: ShareableState): string {
@@ -390,6 +486,20 @@ export function loadStoredState(): ShareableState | null {
   }
 }
 
+export function loadStoredStateViewHint(): 'analysis' | null {
+  try {
+    const rawState = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!rawState) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawState) as Partial<{ mode?: string }>;
+    return parsed.mode === 'manual' ? 'analysis' : null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveStoredState(state: ShareableState): void {
   try {
     window.localStorage.setItem(
@@ -421,6 +531,7 @@ export function createInitialShareableState(): ShareableState {
   const session = createDefaultSession();
 
   return normalizeShareableState({
+    mode: 'timeline',
     session,
   });
 }

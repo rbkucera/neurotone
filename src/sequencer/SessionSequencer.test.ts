@@ -344,4 +344,24 @@ describe('SessionSequencer', () => {
     expect(state.currentSegmentIndex).toBe(0);
     expect(state.totalDuration).toBeCloseTo(12, 6);
   });
+
+  it('honors loop override for full-session playback', async () => {
+    const engine = createMockEngine();
+    const sequencer = new SessionSequencer(engine as never);
+
+    sequencer.load(createTestSession());
+    sequencer.setLoopOverride(true);
+    await sequencer.play();
+
+    const tick = rafCallbacks.shift();
+    expect(tick).toBeDefined();
+    nowMs = 13000;
+    tick?.(nowMs);
+
+    const state = sequencer.getPlaybackState();
+    expect(state.status).toBe('playing');
+    expect(state.totalElapsed).toBeCloseTo(1, 3);
+    expect(state.currentSegmentIndex).toBe(0);
+    await sequencer.stop();
+  });
 });

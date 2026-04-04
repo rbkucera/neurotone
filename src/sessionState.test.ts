@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { compressToEncodedURIComponent } from 'lz-string';
 
 import { sanitizeTonePair } from './audio/binauralEngine';
 import {
   createInitialShareableState,
+  decodeInitialViewHintFromHash,
   decodeShareableState,
   encodeShareableState,
   normalizeShareableState,
@@ -207,7 +209,40 @@ describe('share state encoding', () => {
   it('creates a default timeline when no persisted state is present', () => {
     const state = createInitialShareableState();
 
-    expect(state.mode).toBe('manual');
+    expect(state.mode).toBe('timeline');
+    expect(state.session.label).toBe('Soft Arrival');
+    expect(state.session.loop).toBe(true);
     expect(state.session.segments).toHaveLength(1);
+  });
+
+  it('supports visualizer mode in v5 encoding', () => {
+    const original = normalizeShareableState({
+      mode: 'visualizer',
+    });
+
+    const decoded = decodeShareableState(encodeShareableState(original));
+    expect(decoded?.mode).toBe('visualizer');
+  });
+
+  it('maps old v5 manual payloads to analysis route hint', () => {
+    const legacyManualPayload = {
+      s: {
+        l: 'Legacy manual',
+        s: [
+          {
+            l: 'Segment 1',
+            h: 12,
+            s: {
+              p: [{ i: 'voice-1', c: 200, b: 10, g: 0.8 }],
+            },
+          },
+        ],
+      },
+    };
+    const legacyHash = `#v=5&z=${compressToEncodedURIComponent(
+      JSON.stringify(legacyManualPayload),
+    )}`;
+
+    expect(decodeInitialViewHintFromHash(legacyHash)).toBe('analysis');
   });
 });

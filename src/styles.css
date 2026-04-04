@@ -41,21 +41,19 @@ select {
   gap: 24px;
 }
 
-.shell[data-mode="manual"] {
+.shell[data-mode="analysis"],
+.shell[data-mode="timeline"],
+.shell[data-mode="visualizer"] {
   width: min(1340px, calc(100vw - 32px));
   padding: 14px 0 22px;
   gap: 10px;
 }
 
-.shell[data-mode="timeline"] {
-  width: min(1340px, calc(100vw - 32px));
-  padding: 14px 0 22px;
-  gap: 10px;
-}
-
-.shell[data-mode="manual"] [data-role="header-shell"],
-.shell[data-mode="manual"] [data-role="workspace-shell"],
+.shell[data-mode="analysis"] [data-role="header-shell"],
+.shell[data-mode="analysis"] [data-role="workspace-shell"],
 .shell[data-mode="timeline"] [data-role="header-shell"],
+.shell[data-mode="visualizer"] [data-role="header-shell"],
+.shell[data-mode="visualizer"] [data-role="workspace-shell"],
 .shell[data-mode="timeline"] [data-role="workspace-shell"] {
   gap: 12px;
 }
@@ -823,6 +821,19 @@ input[type="range"] {
   background: radial-gradient(circle, rgba(127, 67, 25, 0.12), transparent 68%);
 }
 
+.panel--workspace-visualizer {
+  gap: 12px;
+  min-height: min(640px, calc(100vh - 150px));
+  border-radius: 20px;
+  border-color: rgba(75, 57, 40, 0.2);
+  background:
+    linear-gradient(180deg, rgba(252, 249, 244, 0.96), rgba(241, 234, 224, 0.98));
+}
+
+.panel--workspace-visualizer::after {
+  background: radial-gradient(circle, rgba(127, 67, 25, 0.12), transparent 68%);
+}
+
 .panel--workspace-advanced {
   max-height: min(640px, calc(100vh - 150px));
 }
@@ -915,6 +926,33 @@ input[type="range"] {
   gap: 8px;
   padding: 10px 12px;
   overflow: hidden;
+}
+
+.panel--visualizer-surface {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+}
+
+.visualizer-surface__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.visualizer-surface__select {
+  min-width: 220px;
+}
+
+.visualizer-canvas {
+  width: 100%;
+  min-height: 280px;
+  border-radius: 14px;
+  border: 1px solid rgba(75, 57, 40, 0.16);
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .composer-modal {
@@ -2853,7 +2891,8 @@ input[type="range"] {
     padding: 16px 0 28px;
   }
 
-  .shell[data-mode="manual"] {
+  .shell[data-mode="analysis"],
+  .shell[data-mode="visualizer"] {
     width: min(100vw - 20px, 1100px);
     padding: 16px 0 28px;
   }
