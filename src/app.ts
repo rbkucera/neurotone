@@ -6203,7 +6203,8 @@ export function createApp(root: HTMLElement): void {
         await sequencer.play();
       }
       syncEngineSnapshot();
-      renderLayout();
+      syncHeader();
+      syncVisualizerTransport();
       persistAppState();
       return;
     }
@@ -6211,7 +6212,8 @@ export function createApp(root: HTMLElement): void {
     if (action === 'visualizer-pause') {
       await sequencer.pause();
       syncEngineSnapshot();
-      renderLayout();
+      syncHeader();
+      syncVisualizerTransport();
       persistAppState();
       startVisualizerDecay();
       return;
