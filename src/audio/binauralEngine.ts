@@ -438,8 +438,6 @@ export class BinauralEngine {
 
   private masterGainNode: GainNode | null = null;
 
-  private limiter: DynamicsCompressorNode | null = null;
-
   private noiseGraph: NoiseGraph | null = null;
 
   private pairGraphs = new Map<string, ToneGraph>();
@@ -614,16 +612,7 @@ export class BinauralEngine {
     const context = new AudioContext();
     const masterGainNode = context.createGain();
     masterGainNode.gain.value = this.base.masterGain;
-
-    const limiter = context.createDynamicsCompressor();
-    limiter.threshold.value = -1;
-    limiter.knee.value = 6;
-    limiter.ratio.value = 20;
-    limiter.attack.value = 0.002;
-    limiter.release.value = 0.05;
-    masterGainNode.connect(limiter);
-    limiter.connect(context.destination);
-    this.limiter = limiter;
+    masterGainNode.connect(context.destination);
 
     this.context = context;
     this.masterGainNode = masterGainNode;
@@ -635,7 +624,16 @@ export class BinauralEngine {
       return;
     }
 
-    rampParam(this.context, this.masterGainNode.gain, this.base.masterGain);
+    const pairGainSum = this.base.pairs.reduce(
+      (sum, pair) => sum + pair.gain,
+      0,
+    );
+    const headroom = Math.max(1, pairGainSum);
+    rampParam(
+      this.context,
+      this.masterGainNode.gain,
+      this.base.masterGain / headroom,
+    );
   }
 
   private syncNoise(rampSeconds = LIMITS.rampSeconds): void {
