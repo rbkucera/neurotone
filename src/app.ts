@@ -6492,6 +6492,7 @@ export function createApp(root: HTMLElement): void {
         const plan = generateSessionPlan(composerDraftToRequest(composerDraft));
         composerExplanation = plan.explanation;
         playbackMode = 'timeline';
+        document.body.classList.remove('modal-open');
         replaceSession(plan.session, {
           preserveWorkspace: false,
           tab: 'timeline',
