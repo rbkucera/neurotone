@@ -209,18 +209,9 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
       } else {
         const alpha = frame.isPlaying
           ? 0.16 + intensity * 0.12
-          : 0.03 + intensity * 0.02;
+          : 0.08;
         for (let index = 0; index < smoothed.length; index += 1) {
           smoothed[index] = smoothed[index]! * (1 - alpha) + signal.mono[index]! * alpha;
-        }
-      }
-
-      if (!frame.isPlaying) {
-        const breath = Math.sin(frame.nowMs / 3200) * 0.015;
-        const denominator = Math.max(smoothed.length - 1, 1);
-        for (let index = 0; index < smoothed.length; index += 1) {
-          const x = index / denominator;
-          smoothed[index] += breath * Math.sin(x * Math.PI * 2 + frame.nowMs / 4800);
         }
       }
 
@@ -323,7 +314,7 @@ function createStereoDriftRibbonsScene(): (root: Container) => VisualizerScene {
       } else {
         const temporalAlpha = frame.isPlaying
           ? 0.14 + intensity * 0.12
-          : 0.03 + intensity * 0.02;
+          : 0.08;
         for (let index = 0; index < signal.left.length; index += 1) {
           const leftPrev = index > 0 ? signal.left[index - 1]! : signal.left[index]!;
           const leftNext =
@@ -337,17 +328,6 @@ function createStereoDriftRibbonsScene(): (root: Container) => VisualizerScene {
             smoothedLeft[index]! * (1 - temporalAlpha) + leftSpatial * temporalAlpha;
           smoothedRight[index] =
             smoothedRight[index]! * (1 - temporalAlpha) + rightSpatial * temporalAlpha;
-        }
-      }
-
-      if (!frame.isPlaying) {
-        const idleDrift = Math.sin(frame.nowMs / 5400) * 0.012;
-        const denominator = Math.max(smoothedLeft.length - 1, 1);
-        for (let index = 0; index < smoothedLeft.length; index += 1) {
-          const x = index / denominator;
-          const wave = idleDrift * Math.sin(x * Math.PI * 1.5 + frame.nowMs / 6200);
-          smoothedLeft[index] += wave;
-          smoothedRight[index] += idleDrift * Math.sin(x * Math.PI * 1.5 + frame.nowMs / 6200 + Math.PI * 0.6);
         }
       }
 
@@ -464,19 +444,10 @@ function createSpectralAuroraScene(): (root: Container) => VisualizerScene {
       } else {
         const alpha = frame.isPlaying
           ? 0.22 + intensity * 0.18
-          : 0.04 + intensity * 0.02;
+          : 0.08;
         for (let index = 0; index < smoothedBands.length; index += 1) {
           smoothedBands[index] =
             smoothedBands[index]! * (1 - alpha) + bands.values[index]! * alpha;
-        }
-      }
-
-      if (!frame.isPlaying) {
-        for (let index = 0; index < smoothedBands.length; index += 1) {
-          const bandIndex = index % bands.bandCount;
-          const basePresence = 0.04 + (bandIndex / Math.max(bands.bandCount - 1, 1)) * 0.06;
-          const shimmer = Math.sin(frame.nowMs / 4000 + bandIndex * 0.7) * 0.015;
-          smoothedBands[index] = Math.max(smoothedBands[index]!, basePresence + shimmer);
         }
       }
 
