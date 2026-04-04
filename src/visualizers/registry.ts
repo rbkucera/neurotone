@@ -205,8 +205,9 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
       });
 
       if (smoothed.length !== signal.mono.length) {
-        smoothed = signal.mono.slice();
-      } else {
+        smoothed = new Float32Array(signal.mono.length);
+      }
+      {
         const alpha = frame.isPlaying
           ? 0.16 + intensity * 0.12
           : 0.08;
@@ -309,10 +310,11 @@ function createStereoDriftRibbonsScene(): (root: Container) => VisualizerScene {
         motionScale: 0.78,
       });
       if (smoothedLeft.length !== signal.left.length) {
-        smoothedLeft = signal.left.slice();
-        smoothedRight = signal.right.slice();
+        smoothedLeft = new Float32Array(signal.left.length);
+        smoothedRight = new Float32Array(signal.left.length);
         smoothedMid = new Float32Array(signal.left.length);
-      } else {
+      }
+      {
         const temporalAlpha = frame.isPlaying
           ? 0.14 + intensity * 0.12
           : 0.08;
@@ -444,10 +446,11 @@ function createSpectralAuroraScene(): (root: Container) => VisualizerScene {
         smoothedFrames !== bands.frameCount ||
         smoothedBandCount !== bands.bandCount
       ) {
-        smoothedBands = bands.values.slice();
+        smoothedBands = new Float32Array(bands.values.length);
         smoothedFrames = bands.frameCount;
         smoothedBandCount = bands.bandCount;
-      } else {
+      }
+      {
         const alpha = frame.isPlaying
           ? 0.22 + intensity * 0.18
           : 0.08;
