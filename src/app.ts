@@ -52,10 +52,12 @@ import {
   decodeShareableState,
   encodeShareableState,
   hasSeenHeadphoneNotice,
+  hasSeenHighVolumeWarning,
   loadMasterVolume,
   loadStoredStateViewHint,
   loadStoredState,
   markHeadphoneNoticeSeen,
+  markHighVolumeWarningSeen,
   saveMasterVolume,
   saveStoredState,
   type ComposerDraft,
@@ -3147,13 +3149,15 @@ function renderVisualizerWorkspace(
                 data-input="masterVolume"
                 type="range"
                 min="0"
-                max="0.45"
+                max="1"
                 step="0.01"
                 value="${masterVolume}"
               />
             </label>
           </div>
         </div>
+
+        <div data-role="high-volume-warning"></div>
 
         <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280"></canvas>
       </section>
@@ -3311,6 +3315,7 @@ export function createApp(root: HTMLElement): void {
   let timelineScrollAnimationFrameId: number | null = null;
   let lastPointerType: string = 'mouse';
   let headphoneNoticeVisible = !hasSeenHeadphoneNotice();
+  let highVolumeWarningDismissed = hasSeenHighVolumeWarning();
   let shareButtonLabel = 'Copy share link';
   let shareFeedbackTimeoutId: number | null = null;
   let composerModalTrigger: HTMLElement | null = null;
@@ -3531,6 +3536,28 @@ export function createApp(root: HTMLElement): void {
           `
           : '';
       }
+    }
+  };
+
+  const syncHighVolumeWarning = (): void => {
+    const container = root.querySelector<HTMLElement>('[data-role="high-volume-warning"]');
+    if (!container) {
+      return;
+    }
+    const shouldShow = masterVolume > 0.45 && !highVolumeWarningDismissed;
+    const isShowing = container.children.length > 0;
+    if (shouldShow !== isShowing) {
+      container.innerHTML = shouldShow
+        ? `
+          <div class="notice-banner">
+            <div>
+              <strong>High volume warning.</strong>
+              <p>Prolonged listening at high volume may cause hearing damage. Consider keeping volume at a comfortable level.</p>
+            </div>
+            <button class="ghost-button" data-action="dismiss-high-volume-warning">I understand</button>
+          </div>
+        `
+        : '';
     }
   };
 
@@ -5611,6 +5638,7 @@ export function createApp(root: HTMLElement): void {
       if (output) {
         output.value = formatPercent(masterVolume);
       }
+      syncHighVolumeWarning();
       return;
     }
 
@@ -6023,6 +6051,13 @@ export function createApp(root: HTMLElement): void {
       headphoneNoticeVisible = false;
       markHeadphoneNoticeSeen();
       syncHeader();
+      return;
+    }
+
+    if (action === 'dismiss-high-volume-warning') {
+      highVolumeWarningDismissed = true;
+      markHighVolumeWarningSeen();
+      syncHighVolumeWarning();
       return;
     }
 

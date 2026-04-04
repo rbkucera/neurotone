@@ -15,6 +15,7 @@ import {
 export const SESSION_STORAGE_KEY = 'neurotone.session.v4';
 export const HEADPHONE_NOTICE_KEY = 'neurotone.headphone-notice.v1';
 const MASTER_VOLUME_KEY = 'neurotone.master-volume.v1';
+const HIGH_VOLUME_WARNING_KEY = 'neurotone.high-volume-warning.v1';
 
 export type PlaybackMode = 'timeline' | 'visualizer';
 
@@ -522,6 +523,22 @@ export function hasSeenHeadphoneNotice(): boolean {
 export function markHeadphoneNoticeSeen(): void {
   try {
     window.localStorage.setItem(HEADPHONE_NOTICE_KEY, '1');
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
+}
+
+export function hasSeenHighVolumeWarning(): boolean {
+  try {
+    return window.localStorage.getItem(HIGH_VOLUME_WARNING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markHighVolumeWarningSeen(): void {
+  try {
+    window.localStorage.setItem(HIGH_VOLUME_WARNING_KEY, '1');
   } catch {
     // Fails silently for blocked storage or quota issues.
   }
