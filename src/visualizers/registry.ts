@@ -231,14 +231,14 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
       });
 
       ribbonMid.clear();
-      strokeSignalPath(ribbonMid, signal.mono, width, centerY, baseAmplitude, {
+      strokeSignalPath(ribbonMid, smoothed, width, centerY, baseAmplitude, {
         width: 4 + intensity * 1.5,
         color: 0xb88c63,
         alpha: 0.38,
       });
 
       ribbonHigh.clear();
-      strokeSignalPath(ribbonHigh, signal.mono, width, centerY, baseAmplitude * 1.02, {
+      strokeSignalPath(ribbonHigh, smoothed, width, centerY, baseAmplitude * 1.02, {
         width: 1.75,
         color: 0x91562b,
         alpha: 0.82,
