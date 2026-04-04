@@ -7,6 +7,7 @@ import {
   createSessionSegment,
   interpolateSoundStates,
   rebuildSessionAutomationLanes,
+  totalSessionDuration,
   resolveSessionMoment,
 } from './utils';
 
@@ -180,5 +181,138 @@ describe('sequencer utils', () => {
     );
 
     expect(session.automationLanes).toEqual([]);
+  });
+
+  it('uses segment one transition for loop wrap crossfade', () => {
+    const session = createSessionDefinition({
+      loop: true,
+      segments: [
+        createSessionSegment({
+          id: 'first',
+          holdDuration: 4,
+          transitionDuration: 3,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 180, beatHz: 8, gain: 0.7 })],
+            masterGain: 0.12,
+            noise: { enabled: false, volume: 0.03, model: 'soft' },
+          },
+          overrides: [],
+        }),
+        createSessionSegment({
+          id: 'second',
+          holdDuration: 5,
+          transitionDuration: 2,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 260, beatHz: 10, gain: 0.7 })],
+            masterGain: 0.42,
+            noise: { enabled: true, volume: 0.08, model: 'brown' },
+          },
+          overrides: [],
+        }),
+      ],
+    });
+
+    const total = totalSessionDuration(session);
+    const moment = resolveSessionMoment(session, total - 1.5);
+
+    expect(moment.playbackState.currentSegmentIndex).toBe(0);
+    expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
+    expect(moment.playbackState.elapsedInPhase).toBeCloseTo(1.5, 6);
+    expect(moment.soundState.masterGain).toBeGreaterThan(0.12);
+    expect(moment.soundState.masterGain).toBeLessThan(0.42);
+  });
+
+  it('samples segment one overrides with local transition time during loop wrap', () => {
+    const session = createSessionDefinition({
+      loop: true,
+      segments: [
+        createSessionSegment({
+          id: 'first',
+          holdDuration: 4,
+          transitionDuration: 3,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 180, beatHz: 8, gain: 0.7 })],
+            masterGain: 0.12,
+            noise: { enabled: false, volume: 0.03, model: 'soft' },
+          },
+          overrides: [
+            {
+              id: 'first-master',
+              label: 'Master',
+              target: 'masterGain',
+              interpolation: 'linear',
+              enabled: true,
+              keyframes: [
+                { id: 'k1', time: 0, value: 0.2 },
+                { id: 'k2', time: 3, value: 0.8 },
+              ],
+            },
+          ],
+        }),
+        createSessionSegment({
+          id: 'second',
+          holdDuration: 5,
+          transitionDuration: 2,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 260, beatHz: 10, gain: 0.7 })],
+            masterGain: 0.42,
+            noise: { enabled: true, volume: 0.08, model: 'brown' },
+          },
+          overrides: [],
+        }),
+      ],
+    });
+
+    const total = totalSessionDuration(session);
+    const moment = resolveSessionMoment(session, total - 1.5);
+
+    expect(moment.playbackState.currentSegmentIndex).toBe(0);
+    expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
+    expect(moment.soundState.masterGain).toBeCloseTo(0.5, 6);
+  });
+
+  it('does not force wrap transition when first segment transition is zero', () => {
+    const session = createSessionDefinition({
+      loop: true,
+      segments: [
+        createSessionSegment({
+          id: 'first',
+          holdDuration: 4,
+          transitionDuration: 0,
+          overrides: [],
+        }),
+        createSessionSegment({
+          id: 'second',
+          holdDuration: 5,
+          transitionDuration: 2,
+          overrides: [],
+        }),
+      ],
+    });
+
+    const total = totalSessionDuration(session);
+    const moment = resolveSessionMoment(session, total - 0.2);
+
+    expect(moment.playbackState.currentSegmentIndex).toBe(1);
+    expect(moment.playbackState.currentSegmentPhase).toBe('holding');
+  });
+
+  it('remains stable for single-segment loop sessions', () => {
+    const session = createSessionDefinition({
+      loop: true,
+      segments: [
+        createSessionSegment({
+          id: 'solo',
+          holdDuration: 6,
+          transitionDuration: 4,
+          overrides: [],
+        }),
+      ],
+    });
+
+    const moment = resolveSessionMoment(session, 5.5);
+
+    expect(moment.playbackState.currentSegmentIndex).toBe(0);
+    expect(moment.playbackState.currentSegmentPhase).toBe('holding');
   });
 });

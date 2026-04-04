@@ -89,7 +89,7 @@ describe('timeline workspace helpers', () => {
     expect(hasExistingTimeline(session)).toBe(true);
   });
 
-  it('normalizes invalid selected segment ids back to the first segment', () => {
+  it('normalizes invalid selected segment ids to no selection', () => {
     const session = {
       id: 'session-3',
       label: 'Session',
@@ -134,8 +134,9 @@ describe('timeline workspace helpers', () => {
     ).toEqual({
       tab: 'timeline',
       composerModalOpen: true,
+      segmentLoopOnly: false,
       inspectorTab: 'support',
-      selectedSegmentId: 'segment-1',
+      selectedSegmentId: null,
       selectedPairId: null,
       zoomLevel: 2,
       viewportLeft: 180,
@@ -188,8 +189,9 @@ describe('timeline workspace helpers', () => {
     ).toEqual({
       tab: 'timeline',
       composerModalOpen: true,
+      segmentLoopOnly: false,
       inspectorTab: 'segment',
-      selectedSegmentId: 'segment-1',
+      selectedSegmentId: null,
       selectedPairId: null,
       zoomLevel: 1,
       viewportLeft: 0,
@@ -251,6 +253,7 @@ describe('timeline workspace helpers', () => {
     expect(
       normalizeTimelineWorkspaceUIState(
         {
+          selectedSegmentId: 'segment-1',
           selectedLaneId: 'missing-lane',
           selectedKeyframeId: 'missing-keyframe',
           analysisDockTab: 'metrics',
@@ -262,6 +265,7 @@ describe('timeline workspace helpers', () => {
     ).toEqual({
       tab: 'timeline',
       composerModalOpen: false,
+      segmentLoopOnly: false,
       inspectorTab: 'segment',
       selectedSegmentId: 'segment-1',
       selectedPairId: null,
