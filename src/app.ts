@@ -3112,6 +3112,8 @@ function renderVisualizerWorkspace(
     <section class="panel panel--workspace panel--workspace-visualizer">
       <section class="transport-row" data-role="visualizer-transport"></section>
 
+      <div data-role="high-volume-warning"></div>
+
       <section class="panel--embedded panel--visualizer-surface">
         <div class="visualizer-surface__header">
           <div>
@@ -3156,8 +3158,6 @@ function renderVisualizerWorkspace(
             </label>
           </div>
         </div>
-
-        <div data-role="high-volume-warning"></div>
 
         <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280"></canvas>
       </section>
