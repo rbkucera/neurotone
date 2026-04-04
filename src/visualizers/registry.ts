@@ -211,7 +211,8 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
           ? 0.16 + intensity * 0.12
           : 0.08;
         for (let index = 0; index < smoothed.length; index += 1) {
-          smoothed[index] = smoothed[index]! * (1 - alpha) + signal.mono[index]! * alpha;
+          const target = frame.isPlaying ? signal.mono[index]! : 0;
+          smoothed[index] = smoothed[index]! * (1 - alpha) + target * alpha;
         }
       }
 
@@ -316,18 +317,23 @@ function createStereoDriftRibbonsScene(): (root: Container) => VisualizerScene {
           ? 0.14 + intensity * 0.12
           : 0.08;
         for (let index = 0; index < signal.left.length; index += 1) {
-          const leftPrev = index > 0 ? signal.left[index - 1]! : signal.left[index]!;
-          const leftNext =
-            index < signal.left.length - 1 ? signal.left[index + 1]! : signal.left[index]!;
-          const rightPrev = index > 0 ? signal.right[index - 1]! : signal.right[index]!;
-          const rightNext =
-            index < signal.right.length - 1 ? signal.right[index + 1]! : signal.right[index]!;
-          const leftSpatial = leftPrev * 0.2 + signal.left[index]! * 0.6 + leftNext * 0.2;
-          const rightSpatial = rightPrev * 0.2 + signal.right[index]! * 0.6 + rightNext * 0.2;
-          smoothedLeft[index] =
-            smoothedLeft[index]! * (1 - temporalAlpha) + leftSpatial * temporalAlpha;
-          smoothedRight[index] =
-            smoothedRight[index]! * (1 - temporalAlpha) + rightSpatial * temporalAlpha;
+          if (frame.isPlaying) {
+            const leftPrev = index > 0 ? signal.left[index - 1]! : signal.left[index]!;
+            const leftNext =
+              index < signal.left.length - 1 ? signal.left[index + 1]! : signal.left[index]!;
+            const rightPrev = index > 0 ? signal.right[index - 1]! : signal.right[index]!;
+            const rightNext =
+              index < signal.right.length - 1 ? signal.right[index + 1]! : signal.right[index]!;
+            const leftSpatial = leftPrev * 0.2 + signal.left[index]! * 0.6 + leftNext * 0.2;
+            const rightSpatial = rightPrev * 0.2 + signal.right[index]! * 0.6 + rightNext * 0.2;
+            smoothedLeft[index] =
+              smoothedLeft[index]! * (1 - temporalAlpha) + leftSpatial * temporalAlpha;
+            smoothedRight[index] =
+              smoothedRight[index]! * (1 - temporalAlpha) + rightSpatial * temporalAlpha;
+          } else {
+            smoothedLeft[index] = smoothedLeft[index]! * (1 - temporalAlpha);
+            smoothedRight[index] = smoothedRight[index]! * (1 - temporalAlpha);
+          }
         }
       }
 
@@ -446,8 +452,9 @@ function createSpectralAuroraScene(): (root: Container) => VisualizerScene {
           ? 0.22 + intensity * 0.18
           : 0.08;
         for (let index = 0; index < smoothedBands.length; index += 1) {
+          const target = frame.isPlaying ? bands.values[index]! : 0;
           smoothedBands[index] =
-            smoothedBands[index]! * (1 - alpha) + bands.values[index]! * alpha;
+            smoothedBands[index]! * (1 - alpha) + target * alpha;
         }
       }
 
