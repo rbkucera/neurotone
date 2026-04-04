@@ -5583,27 +5583,30 @@ export function createApp(root: HTMLElement): void {
 
     if (inputKey === 'masterGain') {
       const gainValue = Number((target as HTMLInputElement).value);
-      const playbackState = activePlaybackState();
-      const isVisualizerPlaying =
-        playbackMode === 'visualizer' && playbackState.status === 'playing';
-      const targetSegment = isVisualizerPlaying
-        ? session.segments[playbackState.currentSegmentIndex]
-        : selectedSegmentOrNull();
-      if (targetSegment) {
+      if (playbackMode === 'visualizer') {
         const updatedSegments = session.segments.map((segment) =>
-          segment.id === targetSegment.id
-            ? createSessionSegment({
-                ...segment,
-                state: sanitizeSessionSoundState({
-                  ...segment.state,
-                  masterGain: gainValue,
-                }),
-              })
-            : segment,
+          createSessionSegment({
+            ...segment,
+            state: sanitizeSessionSoundState({
+              ...segment.state,
+              masterGain: gainValue,
+            }),
+          }),
         );
         replaceSession(
           createSessionDefinition({ ...session, segments: updatedSegments }),
           { rerender: false },
+        );
+      } else {
+        updateSelectedSegment(
+          (segment) => ({
+            ...segment,
+            state: sanitizeSessionSoundState({
+              ...segment.state,
+              masterGain: gainValue,
+            }),
+          }),
+          false,
         );
       }
       const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="master-output"]');
