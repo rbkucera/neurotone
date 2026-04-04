@@ -3100,10 +3100,9 @@ function renderVisualizerBandLeds(
 
 function renderVisualizerWorkspace(
   visualizerId: string,
-  visualizerIntensity: number,
+  masterGain: number,
   bandActivity: VisualizerBandActivity,
 ): string {
-  const intensity = clampNumeric(visualizerIntensity, 0, 1);
 
   return `
     <section class="panel panel--workspace panel--workspace-visualizer">
@@ -3139,16 +3138,16 @@ function renderVisualizerWorkspace(
 
             <label class="control visualizer-surface__intensity">
               <span class="control__row">
-                <span>Intensity</span>
-                <output data-role="visualizer-intensity-output">${formatPercent(intensity)}</output>
+                <span>Volume</span>
+                <output data-role="master-output">${formatPercent(masterGain)}</output>
               </span>
               <input
-                data-input="visualizer-intensity"
+                data-input="masterGain"
                 type="range"
                 min="0"
-                max="1"
+                max="0.45"
                 step="0.01"
-                value="${intensity.toFixed(2)}"
+                value="${masterGain}"
               />
             </label>
           </div>
@@ -4226,6 +4225,20 @@ export function createApp(root: HTMLElement): void {
     playButton.disabled = playing;
     pauseButton.disabled = !playing;
     readout.textContent = `${formatSeconds(playbackState.totalElapsed)} / ${formatSeconds(playbackState.totalDuration)} · Segment ${playbackState.currentSegmentIndex + 1} · ${playbackState.currentSegmentPhase}`;
+
+    const state = selectedSegmentRequired().state;
+    const masterRange = root.querySelector<HTMLInputElement>(
+      '.panel--workspace-visualizer input[type="range"][data-input="masterGain"]',
+    );
+    const masterOutput = root.querySelector<HTMLOutputElement>(
+      '.panel--workspace-visualizer [data-role="master-output"]',
+    );
+    if (masterRange) {
+      masterRange.value = String(state.masterGain);
+    }
+    if (masterOutput) {
+      masterOutput.value = formatPercent(state.masterGain);
+    }
   };
 
   const syncVisualizerBandLeds = (): void => {
@@ -5111,7 +5124,7 @@ export function createApp(root: HTMLElement): void {
         : playbackMode === 'visualizer'
           ? renderVisualizerWorkspace(
               activeVisualizerId,
-              visualizerIntensity,
+              selectedSegmentRequired().state.masterGain,
               visualizerBandActivity,
             )
           : renderManualWorkspace(
@@ -5532,19 +5545,6 @@ export function createApp(root: HTMLElement): void {
     if (inputKey.startsWith('composer-')) {
       readComposerDraftFromDom();
       persistAppState();
-      return;
-    }
-
-    if (inputKey === 'visualizer-intensity' && target instanceof HTMLInputElement) {
-      visualizerIntensity = clampNumeric(Number(target.value), 0, 1);
-      target.value = visualizerIntensity.toFixed(2);
-      const output = root.querySelector<HTMLOutputElement>(
-        '[data-role="visualizer-intensity-output"]',
-      );
-      if (output) {
-        output.value = formatPercent(visualizerIntensity);
-      }
-      syncVisualizerCanvas();
       return;
     }
 
