@@ -1862,6 +1862,35 @@ input[type="range"] {
   overflow: hidden;
 }
 
+.timeline-clip--collapsed {
+  top: 8px;
+  bottom: 8px;
+  border-radius: 10px;
+  border-style: dashed;
+  border-color: rgba(157, 94, 47, 0.38);
+  background: rgba(255, 250, 244, 0.95);
+  z-index: 1;
+}
+
+.timeline-clip--collapsed .timeline-clip__button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.timeline-clip--collapsed .timeline-clip__selected-led {
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+}
+
+.timeline-clip--collapsed .timeline-clip__index {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
 .timeline-clip.is-selected {
   border-color: rgba(157, 94, 47, 0.62);
   box-shadow:

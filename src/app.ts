@@ -116,6 +116,9 @@ const TIMELINE_CHIP_ACTIONS = {
   overlayMinWidthPx: 124,
 };
 
+const TIMELINE_COLLAPSED_THRESHOLD_PX = 48;
+const TIMELINE_COLLAPSED_WIDTH_PX = 36;
+
 const TIMELINE_ZOOM = {
   min: 0.1,
   max: 3,
@@ -1114,6 +1117,7 @@ interface TimelineClipModel {
   window: SegmentWindow;
   left: number;
   width: number;
+  collapsed: boolean;
 }
 
 interface TimelineViewportTick {
@@ -1155,10 +1159,12 @@ function buildTimelineViewportModel(
   const nextPixelsPerSecond = pixelsPerSecond(zoomLevel);
 
   const clips = windows.map((window) => {
+    const trueWidth = Math.max(1, segmentSpanDuration(window) * nextPixelsPerSecond);
     const clip: TimelineClipModel = {
       window,
       left: window.transitionStart * nextPixelsPerSecond,
-      width: Math.max(1, segmentSpanDuration(window) * nextPixelsPerSecond),
+      width: trueWidth,
+      collapsed: trueWidth < TIMELINE_COLLAPSED_THRESHOLD_PX,
     };
     return clip;
   });
@@ -1480,6 +1486,36 @@ function renderTimelineViewport(
                 : TIMELINE_CHIP_ACTIONS.inlineMinWidthPx;
               const hasInlineActions =
                 clip.width >= inlineActionsThreshold;
+
+              if (clip.collapsed) {
+                const midpoint = clip.left + clip.width / 2;
+                const collapsedLeft = midpoint - TIMELINE_COLLAPSED_WIDTH_PX / 2;
+                const clipTitle = `${escapeHtml(segment.label || `Segment ${index + 1}`)} · ${formatSeconds(segmentSpanDuration(clip.window))}`;
+
+                return `
+                  <article
+                    class="timeline-clip timeline-clip--collapsed ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''}"
+                    data-clip-id="${segment.id}"
+                    style="left:${collapsedLeft}px;width:${TIMELINE_COLLAPSED_WIDTH_PX}px"
+                    title="${clipTitle}"
+                  >
+                    <button
+                      class="timeline-clip__button"
+                      data-action="select-segment"
+                      data-segment-id="${segment.id}"
+                      type="button"
+                      draggable="${dragEnabled ? 'true' : 'false'}"
+                      aria-label="${clipTitle}"
+                    >
+                      <span
+                        class="timeline-clip__selected-led ${isSelected ? 'is-on' : ''}"
+                        aria-hidden="true"
+                      ></span>
+                      <span class="timeline-clip__index">${index + 1}</span>
+                    </button>
+                  </article>
+                `;
+              }
 
               return `
                 <article
