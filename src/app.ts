@@ -3513,17 +3513,21 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (headphoneNotice) {
-      headphoneNotice.innerHTML = headphoneNoticeVisible
-        ? `
-          <div class="notice-banner">
-            <div>
-              <strong>Use headphones.</strong>
-              <p>This tool depends on stereo separation. Speakers will collapse the effect.</p>
+      const shouldShow = headphoneNoticeVisible;
+      const isShowing = headphoneNotice.children.length > 0;
+      if (shouldShow !== isShowing) {
+        headphoneNotice.innerHTML = shouldShow
+          ? `
+            <div class="notice-banner">
+              <div>
+                <strong>Use headphones.</strong>
+                <p>This tool depends on stereo separation. Speakers will collapse the effect.</p>
+              </div>
+              <button class="ghost-button" data-action="dismiss-headphone-notice">I understand</button>
             </div>
-            <button class="ghost-button" data-action="dismiss-headphone-notice">I understand</button>
-          </div>
-        `
-        : '';
+          `
+          : '';
+      }
     }
   };
 
