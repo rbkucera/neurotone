@@ -3353,6 +3353,7 @@ export function createApp(root: HTMLElement): void {
     setTimeout(() => {
       toast.classList.add('is-leaving');
       toast.addEventListener('transitionend', () => toast.remove());
+      setTimeout(() => toast.remove(), 500);
     }, durationMs);
   };
 

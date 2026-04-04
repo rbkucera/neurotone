@@ -2975,7 +2975,7 @@ body.modal-open {
   font-size: 0.88rem;
   font-weight: 500;
   box-shadow: 0 8px 24px rgba(45, 34, 25, 0.2);
-  pointer-events: auto;
+  pointer-events: none;
   animation: rise-in 220ms ease forwards;
 }
 
