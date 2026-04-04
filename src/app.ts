@@ -3,6 +3,7 @@ import {
   addTonePair,
   computeTonePairSnapshot,
   removeTonePair,
+  sanitizeTonePair,
   updateTonePair,
   type EngineSnapshot,
   type NoiseConfig,
@@ -110,6 +111,8 @@ const ADVANCED_LAYOUT = {
   laneRowHeightPx: 42,
   laneGapPx: 10,
 };
+
+type TimelineDragInsertPosition = 'before' | 'after';
 
 function escapeHtml(value: string): string {
   return value
@@ -1121,6 +1124,8 @@ function buildTimelineViewportModel(
   session: SessionDefinition,
   playbackState: SessionPlaybackState,
   zoomLevel: number,
+  segmentLoopOnly = false,
+  selectedSegmentId: string | null = null,
 ): TimelineViewportModel {
   const windows = buildSegmentWindows(session);
   const totalDuration = totalSessionDuration(session);
@@ -1147,10 +1152,23 @@ function buildTimelineViewportModel(
   });
 
   const contentWidth = Math.max(1, totalDuration * nextPixelsPerSecond);
-  const globalPlayheadX = Math.max(
-    0,
-    Math.min(playbackState.totalElapsed, totalDuration),
-  ) * nextPixelsPerSecond;
+  const selectedWindow =
+    segmentLoopOnly && selectedSegmentId
+      ? windows.find((window) => window.segment.id === selectedSegmentId) ?? null
+      : null;
+  const selectedWindowSpan = selectedWindow
+    ? segmentSpanDuration(selectedWindow)
+    : 0;
+  const loopSelectedElapsed =
+    selectedWindow && selectedWindowSpan > 0
+      ? ((playbackState.totalElapsed % selectedWindowSpan) + selectedWindowSpan) %
+        selectedWindowSpan
+      : playbackState.totalElapsed;
+  const globalElapsedSeconds = selectedWindow
+    ? selectedWindow.transitionStart + loopSelectedElapsed
+    : playbackState.totalElapsed;
+  const globalPlayheadX = Math.max(0, Math.min(globalElapsedSeconds, totalDuration)) *
+    nextPixelsPerSecond;
 
   return {
     zoom: zoomLevel,
@@ -1193,7 +1211,25 @@ function findFitZoom(
 function computeClipProgress(
   clip: TimelineClipModel,
   playbackState: SessionPlaybackState,
+  segmentLoopOnly = false,
+  selectedSegmentId: string | null = null,
 ): number {
+  if (
+    segmentLoopOnly &&
+    selectedSegmentId &&
+    playbackState.status !== 'complete'
+  ) {
+    if (clip.window.segment.id !== selectedSegmentId) {
+      return 0;
+    }
+    const span = segmentSpanDuration(clip.window);
+    if (span <= 0) {
+      return 0;
+    }
+    const elapsed = ((playbackState.totalElapsed % span) + span) % span;
+    return Math.min(1, Math.max(0, elapsed / span));
+  }
+
   if (playbackState.status === 'complete') {
     return clip.window.index <= playbackState.currentSegmentIndex ? 1 : 0;
   }
@@ -1299,6 +1335,7 @@ function renderSegmentLaneOverlay(
   clip: TimelineClipModel,
 ): string {
   const customLanes = clip.window.segment.overrides.filter((lane) => lane.enabled);
+  const spanSeconds = segmentSpanDuration(clip.window);
 
   if (customLanes.length === 0) {
     return '';
@@ -1309,14 +1346,11 @@ function renderSegmentLaneOverlay(
       const markers = lane.keyframes
         .filter(
           (keyframe) =>
-            keyframe.time >= clip.window.transitionStart &&
-            keyframe.time <= clip.window.end,
+            keyframe.time >= 0 &&
+            keyframe.time <= spanSeconds + 0.0001,
         )
         .map((keyframe) => {
-          const left =
-            ((keyframe.time - clip.window.transitionStart) /
-              segmentSpanDuration(clip.window)) *
-            100;
+          const left = (keyframe.time / spanSeconds) * 100;
 
           return `<span class="segment-lane__keyframe" style="left:${Math.max(
             0,
@@ -1345,10 +1379,18 @@ function renderTimelineViewport(
   selectedSegmentId: string | null,
   playbackState: SessionPlaybackState,
   zoomLevel: number,
+  segmentLoopOnly: boolean,
   revealedChipActionsSegmentId: string | null,
   pendingRemoveSegmentId: string | null,
+  dragEnabled: boolean,
 ): string {
-  const viewport = buildTimelineViewportModel(session, playbackState, zoomLevel);
+  const viewport = buildTimelineViewportModel(
+    session,
+    playbackState,
+    zoomLevel,
+    segmentLoopOnly,
+    selectedSegmentId,
+  );
   const canRemoveSegment = session.segments.length > 1;
   const overlayCandidateId = revealedChipActionsSegmentId ?? selectedSegmentId;
   const overlayCandidateClip = overlayCandidateId
@@ -1396,13 +1438,18 @@ function renderTimelineViewport(
             ></div>
           </div>
         </div>
-        <div class="timeline-clip-track">
+        <div class="timeline-clip-track" data-role="timeline-clip-track" data-action="clear-segment-selection">
           ${viewport.clips
             .map((clip, index) => {
               const segment = clip.window.segment;
               const isSelected = segment.id === selectedSegmentId;
               const isActive = index === playbackState.currentSegmentIndex;
-              const progress = computeClipProgress(clip, playbackState);
+              const progress = computeClipProgress(
+                clip,
+                playbackState,
+                segmentLoopOnly,
+                selectedSegmentId,
+              );
               const isRevealed = segment.id === revealedChipActionsSegmentId;
               const isPendingRemove = segment.id === pendingRemoveSegmentId;
               const inlineActionsThreshold = isPendingRemove
@@ -1422,6 +1469,7 @@ function renderTimelineViewport(
                     data-action="select-segment"
                     data-segment-id="${segment.id}"
                     type="button"
+                    draggable="${dragEnabled ? 'true' : 'false'}"
                   >
                     <span
                       class="timeline-clip__selected-led ${isSelected ? 'is-on' : ''}"
@@ -2177,17 +2225,22 @@ function renderTimelineInspectorBody(
   selectedSegment: SessionSegment | undefined,
   canRemoveSegment: boolean,
 ): string {
+  if (!selectedSegment) {
+    return `
+      <div class="inspector-empty-state">
+        <strong>No segment selected</strong>
+        <p class="subtle">Select a timeline clip to edit segment details, layers, and support controls.</p>
+      </div>
+    `;
+  }
+
   if (inspectorTab === 'segment') {
     return `
       <div class="inspector-section">
-        ${
-          selectedSegment
-            ? renderTimelineInspectorActions(
-                selectedSegment.id,
-                canRemoveSegment,
-              )
-            : ''
-        }
+        ${renderTimelineInspectorActions(
+          selectedSegment.id,
+          canRemoveSegment,
+        )}
         <div class="segment-editor__meta" data-role="segment-meta"></div>
       </div>
     `;
@@ -2523,10 +2576,25 @@ function normalizeSegmentOverrideSliderValue(
 }
 
 function renderSegmentOverrideEditor(
-  segment: SessionSegment,
+  segment: SessionSegment | null,
   timelineUI: TimelineWorkspaceUIState,
   carrierDisplayMode: CarrierDisplayMode,
 ): string {
+  if (!segment) {
+    return `
+      <section class="segment-overrides">
+        <div class="segment-overrides__header">
+          <div>
+            <p class="layer-card__eyebrow">Segment overrides</p>
+            <h4>Selected segment lanes</h4>
+          </div>
+          <button class="secondary-action secondary-action--compact" data-action="add-segment-override-lane" type="button" disabled>Add lane</button>
+        </div>
+        <p class="subtle">No segment selected. Select a segment to create or edit override lanes.</p>
+      </section>
+    `;
+  }
+
   const spanSeconds = segmentOverrideSpanSeconds(segment);
   const targets = collectSegmentOverrideTargets(segment);
   const lanes = segment.overrides;
@@ -2721,9 +2789,9 @@ function renderTimelineTabWorkspace(
   carrierDisplayMode: CarrierDisplayMode,
   composerDraft: ComposerDraft,
 ): string {
-  const selectedSegment =
-    session.segments.find((segment) => segment.id === timelineUI.selectedSegmentId) ??
-    session.segments[0];
+  const selectedSegment = session.segments.find(
+    (segment) => segment.id === timelineUI.selectedSegmentId,
+  );
 
   return `
     <section class="panel panel--workspace panel--workspace-timeline">
@@ -2766,7 +2834,9 @@ function renderTimelineTabWorkspace(
           <div class="inspector-panel__header">
             <div>
               <p class="layer-card__eyebrow">Inspector</p>
-              <h3 data-role="selected-segment-title">Segment</h3>
+              <h3 data-role="selected-segment-title">
+                ${escapeHtml(selectedSegment?.label || 'No segment selected')}
+              </h3>
             </div>
             ${renderInspectorTabToggle(timelineUI.inspectorTab)}
           </div>
@@ -2980,26 +3050,39 @@ function renderGeneratedSummary(
 function renderTimelineTransport(
   playbackState: SessionPlaybackState,
   loop: boolean,
+  selectedSegmentId: string | null,
+  segmentLoopOnly: boolean,
 ): string {
   const playing = playbackState.status === 'playing';
   const paused = playbackState.status === 'paused';
   const idle = playbackState.status === 'idle';
+  const hasSelection = Boolean(selectedSegmentId);
 
   return `
-    <div class="transport-row__cluster transport-row__cluster--primary">
-      <span class="transport-row__label">Transport</span>
-      <button class="transport transport--compact" data-action="play-timeline" type="button" ${playing ? 'disabled' : ''}>Play</button>
-      <button class="ghost-button ghost-button--compact" data-action="pause-timeline" type="button" ${!playing ? 'disabled' : ''}>Pause</button>
-      <button class="ghost-button ghost-button--compact" data-action="resume-timeline" type="button" ${!paused ? 'disabled' : ''}>Resume</button>
-      <button class="ghost-button ghost-button--compact" data-action="stop-timeline" type="button" ${idle ? 'disabled' : ''}>Stop</button>
-      <button class="ghost-button ghost-button--compact" data-action="jump-selected" type="button">Jump to selected</button>
+    <div class="transport-row__line transport-row__line--controls">
+      <div class="transport-row__cluster transport-row__cluster--primary">
+        <span class="transport-row__label">Transport</span>
+        <button class="transport transport--compact" data-action="play-timeline" type="button" ${playing ? 'disabled' : ''}>Play</button>
+        <button
+          class="ghost-button ghost-button--compact transport-row__segment-loop ${segmentLoopOnly ? 'is-active' : ''}"
+          data-action="toggle-segment-loop-only"
+          type="button"
+          ${hasSelection ? '' : 'disabled'}
+          aria-pressed="${segmentLoopOnly ? 'true' : 'false'}"
+        >
+          Loop selected
+        </button>
+        <button class="ghost-button ghost-button--compact" data-action="pause-timeline" type="button" ${!playing ? 'disabled' : ''}>Pause</button>
+        <button class="ghost-button ghost-button--compact" data-action="resume-timeline" type="button" ${!paused ? 'disabled' : ''}>Resume</button>
+        <button class="ghost-button ghost-button--compact" data-action="stop-timeline" type="button" ${idle ? 'disabled' : ''}>Stop</button>
+        <label class="toggle transport-row__loop-toggle">
+          <input data-input="session-loop" type="checkbox" ${loop ? 'checked' : ''} />
+          <span>Loop</span>
+        </label>
+        <button class="ghost-button ghost-button--compact" data-action="jump-selected" type="button" ${hasSelection ? '' : 'disabled'}>Jump to selected</button>
+      </div>
     </div>
-
-    <div class="transport-row__cluster transport-row__cluster--meta">
-      <label class="toggle">
-        <input data-input="session-loop" type="checkbox" ${loop ? 'checked' : ''} />
-        <span>Loop</span>
-      </label>
+    <div class="transport-row__line transport-row__line--status">
       <div class="transport-row__readout" data-role="timeline-readout"></div>
     </div>
   `;
@@ -3022,6 +3105,9 @@ export function createApp(root: HTMLElement): void {
   let manualDiagnosticsOpen = false;
   let revealedChipActionsSegmentId: string | null = null;
   let pendingRemoveSegmentId: string | null = null;
+  let draggedSegmentId: string | null = null;
+  let dragHoverSegmentId: string | null = null;
+  let dragInsertPosition: TimelineDragInsertPosition | null = null;
   let timelineScrollAnimationFrameId: number | null = null;
   let lastPointerType: string = 'mouse';
   let headphoneNoticeVisible = !hasSeenHeadphoneNotice();
@@ -3058,20 +3144,43 @@ export function createApp(root: HTMLElement): void {
       },
       nextSession,
     );
+    if (timelineUI.selectedSegmentId === null && timelineUI.segmentLoopOnly) {
+      timelineUI = normalizeTimelineWorkspaceUIState(
+        {
+          ...timelineUI,
+          segmentLoopOnly: false,
+        },
+        nextSession,
+      );
+    }
   };
 
-  const selectedSegment = (): SessionSegment =>
+  const selectedSegmentOrNull = (): SessionSegment | null =>
     session.segments.find((segment) => segment.id === timelineUI.selectedSegmentId) ??
-    session.segments[0] ??
-    createSessionSegment();
+    null;
+
+  const selectedSegmentRequired = (): SessionSegment =>
+    selectedSegmentOrNull() ?? session.segments[0] ?? createSessionSegment();
 
   const selectedSegmentIndex = (): number =>
-    Math.max(
-      0,
-      session.segments.findIndex((segment) => segment.id === selectedSegment().id),
-    );
+    Math.max(0, session.segments.findIndex((segment) => segment.id === selectedSegmentRequired().id));
 
-  const selectedState = (): SessionSoundState => selectedSegment().state;
+  const selectedState = (): SessionSoundState => selectedSegmentRequired().state;
+
+  const createBlankSegmentStateFrom = (
+    segment: SessionSegment,
+  ): SessionSoundState =>
+    sanitizeSessionSoundState({
+      pairs: segment.state.pairs.map(() => sanitizeTonePair()),
+    });
+
+  const cloneSegmentOverrides = (
+    segment: SessionSegment,
+  ): SessionSegment['overrides'] =>
+    segment.overrides.map((lane) => ({
+      ...lane,
+      keyframes: lane.keyframes.map((keyframe) => ({ ...keyframe })),
+    }));
 
   const currentShareableState = (): ShareableState => ({
     presetId: null,
@@ -3108,6 +3217,22 @@ export function createApp(root: HTMLElement): void {
   const timelineIsPlaying = (): boolean =>
     playbackMode === 'timeline' &&
     activePlaybackState().status === 'playing';
+
+  const syncSequencerPlaybackTarget = (): void => {
+    if (
+      playbackMode === 'timeline' &&
+      timelineUI.segmentLoopOnly &&
+      timelineUI.selectedSegmentId
+    ) {
+      sequencer.setPlaybackTarget({
+        type: 'segment-loop',
+        segmentId: timelineUI.selectedSegmentId,
+      });
+      return;
+    }
+
+    sequencer.setPlaybackTarget('session');
+  };
 
   const headerMetaText = (): string => {
     if (playbackMode === 'manual') {
@@ -3179,13 +3304,13 @@ export function createApp(root: HTMLElement): void {
   const syncSegmentMeta = (): void => {
     const container = root.querySelector<HTMLElement>('[data-role="segment-meta"]');
     const selectedTitle = root.querySelector<HTMLElement>('[data-role="selected-segment-title"]');
-    if (!container) {
-      return;
+    const segment = selectedSegmentOrNull();
+    if (selectedTitle) {
+      selectedTitle.textContent = segment?.label || 'No segment selected';
     }
 
-    const segment = selectedSegment();
-    if (selectedTitle) {
-      selectedTitle.textContent = segment.label || `Segment ${selectedSegmentIndex() + 1}`;
+    if (!container || !segment) {
+      return;
     }
 
     if (!container.querySelector('[data-input="segment-label"]')) {
@@ -3233,7 +3358,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     container.innerHTML = renderSegmentOverrideEditor(
-      selectedSegment(),
+      selectedSegmentOrNull(),
       timelineUI,
       carrierDisplayMode,
     );
@@ -3517,8 +3642,10 @@ export function createApp(root: HTMLElement): void {
       timelineUI.selectedSegmentId,
       activePlaybackState(),
       timelineUI.zoomLevel,
+      timelineUI.segmentLoopOnly,
       revealedChipActionsSegmentId,
       pendingRemoveSegmentId,
+      activePlaybackState().status !== 'playing',
     );
 
     const scrollContainer = root.querySelector<HTMLElement>('[data-role="timeline-scroll"]');
@@ -3526,6 +3653,7 @@ export function createApp(root: HTMLElement): void {
       const nextLeft = Math.max(0, timelineUI.viewportLeft);
       scrollContainer.scrollLeft = nextLeft;
     }
+    syncTimelineDragIndicators();
     syncTimelineChipActionOverlayPosition();
   };
 
@@ -3631,6 +3759,75 @@ export function createApp(root: HTMLElement): void {
     saveTimelineWorkspaceUIState(timelineUI, session);
   };
 
+  const syncTimelineDragIndicators = (): void => {
+    const clipNodes =
+      root.querySelectorAll<HTMLElement>('.timeline-clip');
+    clipNodes.forEach((clip) => {
+      clip.classList.remove('is-dragging', 'is-drop-before', 'is-drop-after');
+    });
+
+    if (draggedSegmentId) {
+      const draggedClip = root.querySelector<HTMLElement>(
+        `[data-clip-id="${draggedSegmentId}"]`,
+      );
+      draggedClip?.classList.add('is-dragging');
+    }
+
+    if (dragHoverSegmentId && dragInsertPosition) {
+      const hoverClip = root.querySelector<HTMLElement>(
+        `[data-clip-id="${dragHoverSegmentId}"]`,
+      );
+      if (hoverClip) {
+        hoverClip.classList.add(
+          dragInsertPosition === 'before' ? 'is-drop-before' : 'is-drop-after',
+        );
+      }
+    }
+  };
+
+  const clearTimelineDragState = (): void => {
+    draggedSegmentId = null;
+    dragHoverSegmentId = null;
+    dragInsertPosition = null;
+    syncTimelineDragIndicators();
+  };
+
+  const applyTimelineDragReorder = (): void => {
+    if (!draggedSegmentId || !dragHoverSegmentId || !dragInsertPosition) {
+      return;
+    }
+
+    const currentIds = session.segments.map((segment) => segment.id);
+    if (!currentIds.includes(draggedSegmentId)) {
+      return;
+    }
+
+    const reorderedIds = currentIds.filter((id) => id !== draggedSegmentId);
+    const hoverIndex = reorderedIds.indexOf(dragHoverSegmentId);
+    if (hoverIndex < 0) {
+      return;
+    }
+
+    const insertIndex =
+      hoverIndex + (dragInsertPosition === 'after' ? 1 : 0);
+    reorderedIds.splice(insertIndex, 0, draggedSegmentId);
+
+    if (
+      reorderedIds.length !== currentIds.length ||
+      reorderedIds.every((id, index) => id === currentIds[index])
+    ) {
+      return;
+    }
+
+    sequencer.reorderSegments(reorderedIds);
+    replaceSession(sequencer.getSession(), {
+      preserveWorkspace: true,
+      selectedSegmentId: timelineUI.selectedSegmentId,
+    });
+    ensureTimelineSegmentVisible(draggedSegmentId, 'smooth');
+    persistAppState();
+  };
+
   const syncTimelineChipActionOverlayPosition = (): void => {
     const scrollContainer = root.querySelector<HTMLElement>('[data-role="timeline-scroll"]');
     const overlay = root.querySelector<HTMLElement>('[data-role="timeline-chip-overlay"]');
@@ -3726,13 +3923,24 @@ export function createApp(root: HTMLElement): void {
 
     transports.forEach((transport) => {
       if (!transport.querySelector('[data-role="timeline-readout"]')) {
-        transport.innerHTML = renderTimelineTransport(playbackState, session.loop);
+        transport.innerHTML = renderTimelineTransport(
+          playbackState,
+          session.loop,
+          timelineUI.selectedSegmentId,
+          timelineUI.segmentLoopOnly,
+        );
       }
 
       const playButton = transport.querySelector<HTMLButtonElement>('[data-action="play-timeline"]');
       const pauseButton = transport.querySelector<HTMLButtonElement>('[data-action="pause-timeline"]');
       const resumeButton = transport.querySelector<HTMLButtonElement>('[data-action="resume-timeline"]');
       const stopButton = transport.querySelector<HTMLButtonElement>('[data-action="stop-timeline"]');
+      const segmentLoopButton = transport.querySelector<HTMLButtonElement>(
+        '[data-action="toggle-segment-loop-only"]',
+      );
+      const jumpSelectedButton = transport.querySelector<HTMLButtonElement>(
+        '[data-action="jump-selected"]',
+      );
       const loopCheckbox = transport.querySelector<HTMLInputElement>('input[data-input="session-loop"]');
       const readout = transport.querySelector<HTMLElement>('[data-role="timeline-readout"]');
 
@@ -3747,6 +3955,17 @@ export function createApp(root: HTMLElement): void {
       }
       if (stopButton) {
         stopButton.disabled = idle;
+      }
+      if (segmentLoopButton) {
+        segmentLoopButton.disabled = timelineUI.selectedSegmentId === null;
+        segmentLoopButton.classList.toggle('is-active', timelineUI.segmentLoopOnly);
+        segmentLoopButton.setAttribute(
+          'aria-pressed',
+          timelineUI.segmentLoopOnly ? 'true' : 'false',
+        );
+      }
+      if (jumpSelectedButton) {
+        jumpSelectedButton.disabled = timelineUI.selectedSegmentId === null;
       }
       if (loopCheckbox) {
         loopCheckbox.checked = session.loop;
@@ -3768,6 +3987,8 @@ export function createApp(root: HTMLElement): void {
       session,
       playbackState,
       timelineUI.zoomLevel,
+      timelineUI.segmentLoopOnly,
+      timelineUI.selectedSegmentId,
     );
     const rulerPlayhead = canvas.querySelector<HTMLElement>('.timeline-ruler__playhead');
     if (rulerPlayhead) {
@@ -3791,7 +4012,12 @@ export function createApp(root: HTMLElement): void {
       );
 
       const localPlayhead = clipElement.querySelector<HTMLElement>('.timeline-clip__playhead');
-      const progress = computeClipProgress(clip, playbackState);
+      const progress = computeClipProgress(
+        clip,
+        playbackState,
+        timelineUI.segmentLoopOnly,
+        timelineUI.selectedSegmentId,
+      );
       if (localPlayhead) {
         localPlayhead.style.setProperty('--playhead-progress', progress.toFixed(4));
         localPlayhead.classList.toggle(
@@ -4096,12 +4322,24 @@ export function createApp(root: HTMLElement): void {
         ? {
             tab: options.tab ?? 'timeline',
             inspectorTab: options.inspectorTab ?? 'segment',
-            selectedSegmentId: options.selectedSegmentId ?? session.segments[0]?.id ?? null,
-            selectedPairId: options.selectedPairId ?? session.segments[0]?.state.pairs[0]?.id ?? null,
+            selectedSegmentId:
+              options.selectedSegmentId === undefined
+                ? session.segments[0]?.id ?? null
+                : options.selectedSegmentId,
+            selectedPairId:
+              options.selectedPairId === undefined
+                ? session.segments[0]?.state.pairs[0]?.id ?? null
+                : options.selectedPairId,
             zoomLevel: timelineUI.zoomLevel,
             viewportLeft: 0,
-            selectedLaneId: options.selectedLaneId ?? null,
-            selectedKeyframeId: options.selectedKeyframeId ?? null,
+            selectedLaneId:
+              options.selectedLaneId === undefined
+                ? null
+                : options.selectedLaneId,
+            selectedKeyframeId:
+              options.selectedKeyframeId === undefined
+                ? null
+                : options.selectedKeyframeId,
             analysisDockOpen:
               options.analysisDockOpen ?? timelineUI.analysisDockOpen,
             analysisDockTab: options.analysisDockTab ?? timelineUI.analysisDockTab,
@@ -4113,11 +4351,22 @@ export function createApp(root: HTMLElement): void {
         : {
             tab: options.tab,
             inspectorTab: options.inspectorTab,
-            selectedSegmentId: options.selectedSegmentId ?? timelineUI.selectedSegmentId,
-            selectedPairId: options.selectedPairId ?? timelineUI.selectedPairId,
-            selectedLaneId: options.selectedLaneId ?? timelineUI.selectedLaneId,
+            selectedSegmentId:
+              options.selectedSegmentId === undefined
+                ? timelineUI.selectedSegmentId
+                : options.selectedSegmentId,
+            selectedPairId:
+              options.selectedPairId === undefined
+                ? timelineUI.selectedPairId
+                : options.selectedPairId,
+            selectedLaneId:
+              options.selectedLaneId === undefined
+                ? timelineUI.selectedLaneId
+                : options.selectedLaneId,
             selectedKeyframeId:
-              options.selectedKeyframeId ?? timelineUI.selectedKeyframeId,
+              options.selectedKeyframeId === undefined
+                ? timelineUI.selectedKeyframeId
+                : options.selectedKeyframeId,
             analysisDockOpen:
               options.analysisDockOpen ?? timelineUI.analysisDockOpen,
             analysisDockTab:
@@ -4129,8 +4378,13 @@ export function createApp(root: HTMLElement): void {
     );
 
     sequencer.replaceSession(session);
+    syncSequencerPlaybackTarget();
 
-    if (activePlaybackState().status !== 'playing') {
+    if (
+      !timelineUI.segmentLoopOnly &&
+      activePlaybackState().status !== 'playing' &&
+      selectedSegmentOrNull()
+    ) {
       sequencer.seekToSegment(selectedSegmentIndex());
       syncEngineSnapshot();
     }
@@ -4146,8 +4400,13 @@ export function createApp(root: HTMLElement): void {
     updater: (segment: SessionSegment) => SessionSegment,
     rerender = false,
   ): void => {
+    const selected = selectedSegmentOrNull();
+    if (!selected) {
+      return;
+    }
+
     const updatedSegments = session.segments.map((segment) =>
-      segment.id === selectedSegment().id
+      segment.id === selected.id
         ? createSessionSegment(updater(segment))
         : segment,
     );
@@ -4209,7 +4468,16 @@ export function createApp(root: HTMLElement): void {
 
   sequencer.load(session);
   ensureTimelineUI(undefined, session);
-  sequencer.seekToSegment(selectedSegmentIndex());
+  if (playbackMode === 'manual' && timelineUI.selectedSegmentId === null) {
+    ensureTimelineUI({
+      selectedSegmentId: session.segments[0]?.id ?? null,
+      segmentLoopOnly: false,
+    });
+  }
+  syncSequencerPlaybackTarget();
+  if (!timelineUI.segmentLoopOnly && selectedSegmentOrNull()) {
+    sequencer.seekToSegment(selectedSegmentIndex());
+  }
   syncEngineSnapshot();
   renderLayout();
   persistAppState();
@@ -4258,6 +4526,111 @@ export function createApp(root: HTMLElement): void {
     },
     true,
   );
+
+  root.addEventListener('dragstart', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const clipButton = target.closest<HTMLElement>('.timeline-clip__button');
+    if (!clipButton) {
+      return;
+    }
+
+    if (activePlaybackState().status === 'playing') {
+      event.preventDefault();
+      return;
+    }
+
+    if (target.closest('.timeline-chip-actions')) {
+      event.preventDefault();
+      return;
+    }
+
+    const segmentId = clipButton.dataset.segmentId;
+    if (!segmentId) {
+      return;
+    }
+
+    draggedSegmentId = segmentId;
+    dragHoverSegmentId = null;
+    dragInsertPosition = null;
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', segmentId);
+      event.dataTransfer.effectAllowed = 'move';
+    }
+    syncTimelineDragIndicators();
+  });
+
+  root.addEventListener('dragover', (event) => {
+    if (!draggedSegmentId) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const timelineScroll = target.closest<HTMLElement>('[data-role="timeline-scroll"]');
+    if (!timelineScroll) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+
+    const hoverClip = target.closest<HTMLElement>('[data-clip-id]');
+    if (!hoverClip) {
+      dragHoverSegmentId = null;
+      dragInsertPosition = null;
+      syncTimelineDragIndicators();
+      return;
+    }
+
+    const hoverSegmentId = hoverClip.dataset.clipId ?? null;
+    if (!hoverSegmentId || hoverSegmentId === draggedSegmentId) {
+      dragHoverSegmentId = null;
+      dragInsertPosition = null;
+      syncTimelineDragIndicators();
+      return;
+    }
+
+    const hoverRect = hoverClip.getBoundingClientRect();
+    dragHoverSegmentId = hoverSegmentId;
+    dragInsertPosition =
+      event.clientX < hoverRect.left + hoverRect.width / 2 ? 'before' : 'after';
+    syncTimelineDragIndicators();
+  });
+
+  root.addEventListener('drop', (event) => {
+    if (!draggedSegmentId) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      clearTimelineDragState();
+      return;
+    }
+
+    const timelineScroll = target.closest<HTMLElement>('[data-role="timeline-scroll"]');
+    if (!timelineScroll) {
+      clearTimelineDragState();
+      return;
+    }
+
+    event.preventDefault();
+    applyTimelineDragReorder();
+    clearTimelineDragState();
+  });
+
+  root.addEventListener('dragend', () => {
+    clearTimelineDragState();
+  });
 
   root.addEventListener('input', (event) => {
     const target = event.target;
@@ -4371,7 +4744,11 @@ export function createApp(root: HTMLElement): void {
       inputKey === 'segment-override-keyframe-time-slider' &&
       target instanceof HTMLInputElement
     ) {
-      const maxSeconds = segmentOverrideSpanSeconds(selectedSegment());
+      const segment = selectedSegmentOrNull();
+      if (!segment) {
+        return;
+      }
+      const maxSeconds = segmentOverrideSpanSeconds(segment);
       const nextValue = clampNumeric(Number(target.value), 0, maxSeconds);
       const editor = target.closest<HTMLElement>('.segment-override-keyframe-editor');
       const output = editor?.querySelector<HTMLOutputElement>(
@@ -4534,15 +4911,19 @@ export function createApp(root: HTMLElement): void {
 
     if (inputKey === 'segment-override-target' && target instanceof HTMLSelectElement && target.dataset.laneId) {
       const nextTarget = target.value as SegmentOverrideTarget;
+      const segment = selectedSegmentOrNull();
+      if (!segment) {
+        return;
+      }
       const baseValue = segmentStartValueForOverrideTarget(
-        selectedSegment(),
+        segment,
         nextTarget,
       );
       upsertSelectedSegmentOverrideLane(target.dataset.laneId, (lane) => ({
         ...lane,
         target: nextTarget,
         label: describeSegmentOverrideTarget(
-          selectedSegment(),
+          segment,
           nextTarget,
         ),
         interpolation: effectiveOverrideInterpolation(
@@ -4575,7 +4956,11 @@ export function createApp(root: HTMLElement): void {
       target.dataset.laneId &&
       target.dataset.keyframeId
     ) {
-      const maxSeconds = segmentOverrideSpanSeconds(selectedSegment());
+      const segment = selectedSegmentOrNull();
+      if (!segment) {
+        return;
+      }
+      const maxSeconds = segmentOverrideSpanSeconds(segment);
       upsertSelectedSegmentOverrideLane(target.dataset.laneId, (lane) => ({
         ...lane,
         keyframes: lane.keyframes
@@ -4669,6 +5054,22 @@ export function createApp(root: HTMLElement): void {
 
     const actionTarget = target.closest<HTMLElement>('[data-action]');
     if (!actionTarget) {
+      if (
+        playbackMode === 'timeline' &&
+        timelineUI.selectedSegmentId !== null &&
+        target.closest('[data-role="timeline-canvas"]') &&
+        !target.closest('[data-clip-id]')
+      ) {
+        ensureTimelineUI({
+          selectedSegmentId: null,
+          selectedPairId: null,
+          selectedLaneId: null,
+          selectedKeyframeId: null,
+        });
+        syncSequencerPlaybackTarget();
+        renderLayout();
+        persistAppState();
+      }
       return;
     }
 
@@ -4732,8 +5133,13 @@ export function createApp(root: HTMLElement): void {
           session,
         );
       } else {
+        ensureTimelineUI({
+          selectedSegmentId: timelineUI.selectedSegmentId ?? session.segments[0]?.id ?? null,
+          segmentLoopOnly: false,
+        });
         manualDiagnosticsOpen = false;
       }
+      syncSequencerPlaybackTarget();
       revealedChipActionsSegmentId = null;
       pendingRemoveSegmentId = null;
       renderLayout();
@@ -4830,6 +5236,8 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'play-timeline') {
+      clearTimelineDragState();
+      syncSequencerPlaybackTarget();
       await sequencer.play();
       syncEngineSnapshot();
       renderLayout();
@@ -4862,17 +5270,25 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'jump-selected') {
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
       pendingRemoveSegmentId = null;
       sequencer.seekToSegment(selectedSegmentIndex());
       syncEngineSnapshot();
       renderLayout();
-      ensureTimelineSegmentVisible(selectedSegment().id, 'smooth');
+      ensureTimelineSegmentVisible(selected.id, 'smooth');
       persistAppState();
       return;
     }
 
     if (action === 'select-segment-override-lane' && actionTarget.dataset.laneId) {
-      const lane = selectedSegment().overrides.find(
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
+      const lane = selected.overrides.find(
         (item) => item.id === actionTarget.dataset.laneId,
       );
       ensureTimelineUI({
@@ -4934,6 +5350,24 @@ export function createApp(root: HTMLElement): void {
             : keyframe,
         ),
       }));
+      return;
+    }
+
+    if (action === 'toggle-segment-loop-only') {
+      if (!timelineUI.selectedSegmentId) {
+        return;
+      }
+      const nextSegmentLoopOnly = !timelineUI.segmentLoopOnly;
+      ensureTimelineUI({
+        segmentLoopOnly: nextSegmentLoopOnly,
+      });
+      syncSequencerPlaybackTarget();
+      if (nextSegmentLoopOnly) {
+        sequencer.seekToSegment(selectedSegmentIndex());
+      }
+      syncEngineSnapshot();
+      renderLayout();
+      persistAppState();
       return;
     }
 
@@ -5010,13 +5444,7 @@ export function createApp(root: HTMLElement): void {
     if (action === 'timeline-fit') {
       const scrollContainer = root.querySelector<HTMLElement>('[data-role="timeline-scroll"]');
       const availableWidth = scrollContainer?.clientWidth ?? 0;
-      const currentWidth = buildTimelineViewportModel(
-        session,
-        activePlaybackState(),
-        timelineUI.zoomLevel,
-      ).contentWidth;
-
-      if (!scrollContainer || availableWidth <= 0 || currentWidth <= availableWidth + 1) {
+      if (!scrollContainer || availableWidth <= 0) {
         return;
       }
 
@@ -5058,24 +5486,60 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
+    if (action === 'clear-segment-selection') {
+      if (timelineUI.selectedSegmentId === null) {
+        return;
+      }
+
+      revealedChipActionsSegmentId = null;
+      pendingRemoveSegmentId = null;
+      ensureTimelineUI({
+        selectedSegmentId: null,
+        selectedPairId: null,
+        selectedLaneId: null,
+        selectedKeyframeId: null,
+      });
+      syncSequencerPlaybackTarget();
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
     if (action === 'select-segment' && actionTarget.dataset.segmentId) {
       const nextSegmentId = actionTarget.dataset.segmentId;
+      const clearSelection = timelineUI.selectedSegmentId === nextSegmentId;
       if (lastPointerType === 'touch' || lastPointerType === 'pen') {
-        revealedChipActionsSegmentId = nextSegmentId;
+        revealedChipActionsSegmentId = clearSelection ? null : nextSegmentId;
       } else {
         revealedChipActionsSegmentId = null;
       }
       if (pendingRemoveSegmentId && pendingRemoveSegmentId !== nextSegmentId) {
         pendingRemoveSegmentId = null;
       }
-      ensureTimelineUI({
-        selectedSegmentId: nextSegmentId,
-      });
-      if (activePlaybackState().status !== 'playing' && engineState.playbackState !== 'running') {
+      ensureTimelineUI(
+        clearSelection
+          ? {
+              selectedSegmentId: null,
+              selectedPairId: null,
+              selectedLaneId: null,
+              selectedKeyframeId: null,
+            }
+          : {
+              selectedSegmentId: nextSegmentId,
+            },
+      );
+      syncSequencerPlaybackTarget();
+      if (
+        !clearSelection &&
+        activePlaybackState().status !== 'playing' &&
+        engineState.playbackState !== 'running'
+      ) {
         applySelectedSegmentToEngine();
       }
       renderLayout();
-      ensureTimelineSegmentVisible(nextSegmentId, 'smooth');
+      if (!clearSelection) {
+        ensureTimelineSegmentVisible(nextSegmentId, 'smooth');
+      }
       persistAppState();
       return;
     }
@@ -5099,6 +5563,7 @@ export function createApp(root: HTMLElement): void {
       if (pendingRemoveSegmentId && pendingRemoveSegmentId !== nextSegmentId) {
         pendingRemoveSegmentId = null;
       }
+      syncSequencerPlaybackTarget();
       sequencer.seekToSegment(selectedSegmentIndex());
       syncEngineSnapshot();
       renderLayout();
@@ -5115,10 +5580,11 @@ export function createApp(root: HTMLElement): void {
 
       const baseSegment = session.segments[index]!;
       const nextSegment = createSessionSegment({
-        label: `${baseSegment.label || 'Segment'} copy`,
+        label: 'New segment',
         holdDuration: baseSegment.holdDuration,
-        transitionDuration: baseSegment.transitionDuration || 4,
-        state: sanitizeSessionSoundState(baseSegment.state),
+        transitionDuration: baseSegment.transitionDuration,
+        state: createBlankSegmentStateFrom(baseSegment),
+        overrides: [],
       });
       const segments = [...session.segments];
       segments.splice(index + 1, 0, nextSegment);
@@ -5146,6 +5612,7 @@ export function createApp(root: HTMLElement): void {
         holdDuration: sourceSegment.holdDuration,
         transitionDuration: sourceSegment.transitionDuration,
         state: sanitizeSessionSoundState(sourceSegment.state),
+        overrides: cloneSegmentOverrides(sourceSegment),
       });
       const segments = [...session.segments];
       segments.splice(index + 1, 0, nextSegment);
@@ -5212,6 +5679,10 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'add-pair') {
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
       const { pair, pairs } = addTonePair(selectedState().pairs, {
         carrierHz: 200,
         beatHz: 10,
@@ -5221,7 +5692,7 @@ export function createApp(root: HTMLElement): void {
         createSessionDefinition({
           ...session,
           segments: session.segments.map((segment) =>
-            segment.id === selectedSegment().id
+            segment.id === selected.id
               ? createSessionSegment({
                   ...segment,
                   state: sanitizeSessionSoundState({
@@ -5241,6 +5712,10 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'remove-pair' && actionTarget.dataset.pairId) {
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
       const nextPairs = removeTonePair(
         selectedState().pairs,
         actionTarget.dataset.pairId,
@@ -5249,7 +5724,7 @@ export function createApp(root: HTMLElement): void {
         createSessionDefinition({
           ...session,
           segments: session.segments.map((segment) =>
-            segment.id === selectedSegment().id
+            segment.id === selected.id
               ? createSessionSegment({
                   ...segment,
                   state: sanitizeSessionSoundState({
@@ -5272,7 +5747,10 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'add-segment-override-lane') {
-      const selected = selectedSegment();
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
       const targets = collectSegmentOverrideTargets(selected);
       const defaultTarget = targets[0] ?? 'masterGain';
       const startValue = segmentStartValueForOverrideTarget(
@@ -5315,7 +5793,10 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'remove-segment-override-lane' && actionTarget.dataset.laneId) {
-      const selected = selectedSegment();
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
       const remainingOverrides = selected.overrides.filter(
         (lane) => lane.id !== actionTarget.dataset.laneId,
       );
@@ -5346,7 +5827,10 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'add-segment-override-keyframe' && actionTarget.dataset.laneId) {
-      const selected = selectedSegment();
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
       const timelineDuration = segmentOverrideSpanSeconds(selected);
       const keyframeId = `keyframe-${Math.random().toString(36).slice(2, 8)}`;
       replaceSession(
@@ -5387,7 +5871,11 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'remove-segment-override-keyframe' && actionTarget.dataset.laneId && actionTarget.dataset.keyframeId) {
-      const lane = selectedSegment().overrides.find(
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
+      const lane = selected.overrides.find(
         (item) => item.id === actionTarget.dataset.laneId,
       );
       const nextKeyframes =
@@ -5400,7 +5888,7 @@ export function createApp(root: HTMLElement): void {
         createSessionDefinition({
           ...session,
           segments: session.segments.map((segment) =>
-            segment.id === selectedSegment().id
+            segment.id === selected.id
               ? createSessionSegment({
                   ...segment,
                   overrides: segment.overrides.map((item) =>

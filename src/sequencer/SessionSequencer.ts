@@ -7,18 +7,21 @@ import {
 import {
   createSessionDefinition,
   createSessionSegment,
+  type ResolvedSessionMoment,
+  resolveSegmentLoopMoment,
   resolveSessionMoment,
   rebuildSessionAutomationLanes,
   totalSessionDuration,
 } from './utils';
 
-function createId(prefix: string): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return `${prefix}-${globalThis.crypto.randomUUID()}`;
-  }
+const HIDDEN_TAB_TICK_INTERVAL_MS = 140;
 
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-}
+type PlaybackTarget =
+  | 'session'
+  | {
+      type: 'segment-loop';
+      segmentId: string;
+    };
 
 export class SessionSequencer {
   private session: SessionDefinition = rebuildSessionAutomationLanes(
@@ -36,6 +39,8 @@ export class SessionSequencer {
 
   private animationFrameId: number | null = null;
 
+  private timeoutId: number | null = null;
+
   private tickSubscribers = new Set<(state: SessionPlaybackState) => void>();
 
   private segmentSubscribers = new Set<
@@ -48,23 +53,27 @@ export class SessionSequencer {
 
   private lastSegmentIndex = -1;
 
+  private visibilitySyncActive = false;
+
+  private playbackTarget: PlaybackTarget = 'session';
+
   constructor(private readonly engine: BinauralEngine) {}
 
   load(session: SessionDefinition): void {
     this.cancelTick();
+    this.detachVisibilitySync();
     this.session = rebuildSessionAutomationLanes(createSessionDefinition(session));
+    this.playbackTarget = 'session';
     this.pausedAtSeconds = 0;
     this.lastSegmentIndex = -1;
+    const initialMoment = this.resolveMoment(0);
     this.playbackState = {
-      ...this.playbackState,
+      ...initialMoment.playbackState,
       status: 'idle',
-      currentSegmentIndex: 0,
-      currentSegmentPhase: 'holding',
       elapsedInPhase: 0,
       totalElapsed: 0,
-      totalDuration: totalSessionDuration(this.session),
     };
-    this.applySoundState(this.session.segments[0]?.state);
+    this.applySoundState(initialMoment.soundState);
     this.notifyTick();
   }
 
@@ -78,25 +87,31 @@ export class SessionSequencer {
         : 0;
 
     this.session = nextSession;
-    this.playbackState.totalDuration = totalSessionDuration(this.session);
+    this.playbackTarget = this.normalizePlaybackTarget(this.playbackTarget);
+    this.playbackState.totalDuration = this.totalDurationForTarget();
 
     if (this.playbackState.status === 'idle') {
-      this.applySoundState(this.session.segments[0]?.state);
+      const idleMoment = this.resolveMoment(0);
+      this.playbackState = {
+        ...idleMoment.playbackState,
+        status: 'idle',
+        totalElapsed: 0,
+        elapsedInPhase: 0,
+      };
+      this.applySoundState(idleMoment.soundState);
+      this.notifySegment(idleMoment.playbackState.currentSegmentIndex);
       this.notifyTick();
       return;
     }
 
-    const effectiveElapsed =
-      this.session.loop && this.playbackState.totalDuration > 0
-        ? preservedElapsed % this.playbackState.totalDuration
-        : Math.min(preservedElapsed, this.playbackState.totalDuration);
+    const effectiveElapsed = this.normalizeElapsedForTarget(preservedElapsed);
 
     this.pausedAtSeconds = effectiveElapsed;
     if (this.playbackState.status === 'playing') {
       this.startedAtMs = performance.now() - effectiveElapsed * 1000;
     }
 
-    const moment = resolveSessionMoment(this.session, effectiveElapsed);
+    const moment = this.resolveMoment(effectiveElapsed);
     this.applySoundState(moment.soundState);
     this.playbackState = {
       ...moment.playbackState,
@@ -111,6 +126,39 @@ export class SessionSequencer {
     return this.session;
   }
 
+  setPlaybackTarget(target: PlaybackTarget): void {
+    const normalizedTarget = this.normalizePlaybackTarget(target);
+    if (this.isSamePlaybackTarget(this.playbackTarget, normalizedTarget)) {
+      return;
+    }
+
+    this.playbackTarget = normalizedTarget;
+    const preservedElapsed =
+      this.playbackState.status === 'playing' || this.playbackState.status === 'paused'
+        ? this.playbackState.totalElapsed
+        : 0;
+    const effectiveElapsed = this.normalizeElapsedForTarget(preservedElapsed);
+    this.pausedAtSeconds = effectiveElapsed;
+
+    if (this.playbackState.status === 'playing') {
+      this.startedAtMs = performance.now() - effectiveElapsed * 1000;
+    }
+
+    const nextStatus =
+      this.playbackState.status === 'complete'
+        ? 'idle'
+        : this.playbackState.status;
+    const moment = this.resolveMoment(effectiveElapsed);
+    this.applySoundState(moment.soundState);
+    this.playbackState = {
+      ...moment.playbackState,
+      status: nextStatus,
+    };
+    this.lastSegmentIndex = -1;
+    this.notifySegment(moment.playbackState.currentSegmentIndex);
+    this.notifyTick();
+  }
+
   async play(): Promise<void> {
     if (this.playbackState.status === 'paused') {
       await this.resume();
@@ -122,9 +170,10 @@ export class SessionSequencer {
         ? 0
         : Math.max(0, this.playbackState.totalElapsed);
 
-    this.pausedAtSeconds = startFromSeconds;
-    this.startedAtMs = performance.now() - startFromSeconds * 1000;
-    const moment = resolveSessionMoment(this.session, startFromSeconds);
+    const effectiveElapsed = this.normalizeElapsedForTarget(startFromSeconds);
+    this.pausedAtSeconds = effectiveElapsed;
+    this.startedAtMs = performance.now() - effectiveElapsed * 1000;
+    const moment = this.resolveMoment(effectiveElapsed);
     this.applySoundState(moment.soundState);
     this.playbackState = {
       ...moment.playbackState,
@@ -133,6 +182,7 @@ export class SessionSequencer {
     this.notifySegment(moment.playbackState.currentSegmentIndex);
     await this.engine.start();
     this.notifyTick();
+    this.attachVisibilitySync();
     this.scheduleTick();
   }
 
@@ -144,6 +194,7 @@ export class SessionSequencer {
     this.pausedAtSeconds = this.playbackState.totalElapsed;
     this.playbackState.status = 'paused';
     this.cancelTick();
+    this.detachVisibilitySync();
     await this.engine.stop();
     this.notifyTick();
   }
@@ -154,34 +205,43 @@ export class SessionSequencer {
     }
 
     this.startedAtMs = performance.now() - this.pausedAtSeconds * 1000;
-    const moment = resolveSessionMoment(this.session, this.pausedAtSeconds);
+    const moment = this.resolveMoment(this.pausedAtSeconds);
     this.applySoundState(moment.soundState);
     await this.engine.start();
-    this.playbackState.status = 'playing';
+    this.playbackState = {
+      ...moment.playbackState,
+      status: 'playing',
+    };
+    this.notifySegment(moment.playbackState.currentSegmentIndex);
     this.notifyTick();
+    this.attachVisibilitySync();
     this.scheduleTick();
   }
 
   async stop(): Promise<void> {
     this.cancelTick();
+    this.detachVisibilitySync();
     this.pausedAtSeconds = 0;
     this.lastSegmentIndex = -1;
+    const stoppedMoment = this.resolveMoment(0);
     this.playbackState = {
-      ...this.playbackState,
+      ...stoppedMoment.playbackState,
       status: 'idle',
-      currentSegmentIndex: 0,
-      currentSegmentPhase: 'holding',
       elapsedInPhase: 0,
       totalElapsed: 0,
-      totalDuration: totalSessionDuration(this.session),
     };
     await this.engine.stop();
-    this.applySoundState(this.session.segments[0]?.state);
-    this.notifySegment(0);
+    this.applySoundState(stoppedMoment.soundState);
+    this.notifySegment(stoppedMoment.playbackState.currentSegmentIndex);
     this.notifyTick();
   }
 
   seekToSegment(index: number): void {
+    if (this.playbackTarget !== 'session') {
+      this.seekToTime(0);
+      return;
+    }
+
     const nextIndex = Math.min(
       this.session.segments.length - 1,
       Math.max(0, index),
@@ -196,21 +256,7 @@ export class SessionSequencer {
         );
       }, 0);
 
-    this.pausedAtSeconds = time;
-    this.startedAtMs = performance.now() - time * 1000;
-    const moment = resolveSessionMoment(this.session, time);
-    this.applySoundState(moment.soundState);
-    this.playbackState = {
-      ...moment.playbackState,
-      status:
-        this.playbackState.status === 'playing'
-          ? 'playing'
-          : this.playbackState.status === 'paused'
-            ? 'paused'
-            : 'idle',
-    };
-    this.notifySegment(moment.playbackState.currentSegmentIndex);
-    this.notifyTick();
+    this.seekToTime(time);
   }
 
   getPlaybackState(): SessionPlaybackState {
@@ -242,7 +288,8 @@ export class SessionSequencer {
       ...this.session,
       segments,
     });
-    this.playbackState.totalDuration = totalSessionDuration(this.session);
+    this.playbackTarget = this.normalizePlaybackTarget(this.playbackTarget);
+    this.playbackState.totalDuration = this.totalDurationForTarget();
     this.notifyTick();
     return nextSegment.id;
   }
@@ -256,7 +303,8 @@ export class SessionSequencer {
       ...this.session,
       segments: this.session.segments.filter((segment) => segment.id !== id),
     });
-    this.playbackState.totalDuration = totalSessionDuration(this.session);
+    this.playbackTarget = this.normalizePlaybackTarget(this.playbackTarget);
+    this.playbackState.totalDuration = this.totalDurationForTarget();
     this.notifyTick();
   }
 
@@ -267,7 +315,8 @@ export class SessionSequencer {
         segment.id === id ? createSessionSegment({ ...segment, ...patch }) : segment,
       ),
     });
-    this.playbackState.totalDuration = totalSessionDuration(this.session);
+    this.playbackTarget = this.normalizePlaybackTarget(this.playbackTarget);
+    this.playbackState.totalDuration = this.totalDurationForTarget();
     this.notifyTick();
   }
 
@@ -285,12 +334,22 @@ export class SessionSequencer {
       ...this.session,
       segments: reordered,
     });
+    this.playbackTarget = this.normalizePlaybackTarget(this.playbackTarget);
+    this.playbackState.totalDuration = this.totalDurationForTarget();
     this.notifyTick();
   }
 
   private scheduleTick(): void {
     this.cancelTick();
-    this.animationFrameId = window.requestAnimationFrame(this.handleTick);
+    if (this.shouldUseTimeoutScheduler()) {
+      this.timeoutId = window.setTimeout(
+        this.handleTimeoutTick,
+        HIDDEN_TAB_TICK_INTERVAL_MS,
+      );
+      return;
+    }
+
+    this.animationFrameId = window.requestAnimationFrame(this.handleAnimationFrameTick);
   }
 
   private cancelTick(): void {
@@ -298,14 +357,77 @@ export class SessionSequencer {
       window.cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+
+    if (this.timeoutId !== null) {
+      window.clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
   }
 
-  private readonly handleTick = async (timestampMs: number): Promise<void> => {
-    const elapsedSeconds = Math.max(0, (timestampMs - this.startedAtMs) / 1000);
-    const totalDuration = totalSessionDuration(this.session);
+  private shouldUseTimeoutScheduler(): boolean {
+    return (
+      typeof document !== 'undefined' &&
+      document.visibilityState === 'hidden'
+    );
+  }
 
-    if (!this.session.loop && elapsedSeconds >= totalDuration) {
-      const finalMoment = resolveSessionMoment(this.session, totalDuration);
+  private attachVisibilitySync(): void {
+    if (this.visibilitySyncActive || typeof document === 'undefined') {
+      return;
+    }
+
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    this.visibilitySyncActive = true;
+  }
+
+  private detachVisibilitySync(): void {
+    if (!this.visibilitySyncActive || typeof document === 'undefined') {
+      return;
+    }
+
+    document.removeEventListener(
+      'visibilitychange',
+      this.handleVisibilityChange,
+    );
+    this.visibilitySyncActive = false;
+  }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (this.playbackState.status !== 'playing') {
+      return;
+    }
+
+    this.scheduleTick();
+  };
+
+  private readonly handleAnimationFrameTick = (timestampMs: number): void => {
+    this.animationFrameId = null;
+    if (this.playbackState.status !== 'playing') {
+      return;
+    }
+
+    void this.advancePlayback(timestampMs);
+  };
+
+  private readonly handleTimeoutTick = (): void => {
+    this.timeoutId = null;
+    if (this.playbackState.status !== 'playing') {
+      return;
+    }
+
+    void this.advancePlayback(performance.now());
+  };
+
+  private async advancePlayback(timestampMs: number): Promise<void> {
+    const elapsedSeconds = Math.max(0, (timestampMs - this.startedAtMs) / 1000);
+    const totalDuration = this.totalDurationForTarget();
+
+    if (
+      this.playbackTarget === 'session' &&
+      !this.session.loop &&
+      elapsedSeconds >= totalDuration
+    ) {
+      const finalMoment = this.resolveMoment(totalDuration);
       this.applySoundState(finalMoment.soundState);
       this.playbackState = {
         ...finalMoment.playbackState,
@@ -315,10 +437,11 @@ export class SessionSequencer {
       this.notifyTick();
       await this.engine.stop();
       this.cancelTick();
+      this.detachVisibilitySync();
       return;
     }
 
-    const moment = resolveSessionMoment(this.session, elapsedSeconds);
+    const moment = this.resolveMoment(elapsedSeconds);
     this.applySoundState(moment.soundState);
     this.playbackState = {
       ...moment.playbackState,
@@ -327,7 +450,7 @@ export class SessionSequencer {
     this.notifySegment(moment.playbackState.currentSegmentIndex);
     this.notifyTick();
     this.scheduleTick();
-  };
+  }
 
   private notifyTick(): void {
     this.tickSubscribers.forEach((callback) => callback(this.playbackState));
@@ -361,5 +484,94 @@ export class SessionSequencer {
       masterGain: soundState.masterGain,
     });
     this.engine.setNoise(soundState.noise);
+  }
+
+  private seekToTime(time: number): void {
+    const effectiveElapsed = this.normalizeElapsedForTarget(time);
+    this.pausedAtSeconds = effectiveElapsed;
+    this.startedAtMs = performance.now() - effectiveElapsed * 1000;
+    const moment = this.resolveMoment(effectiveElapsed);
+    this.applySoundState(moment.soundState);
+    this.playbackState = {
+      ...moment.playbackState,
+      status:
+        this.playbackState.status === 'playing'
+          ? 'playing'
+          : this.playbackState.status === 'paused'
+            ? 'paused'
+            : 'idle',
+    };
+    this.notifySegment(moment.playbackState.currentSegmentIndex);
+    this.notifyTick();
+  }
+
+  private resolveMoment(time: number): ResolvedSessionMoment {
+    if (this.playbackTarget === 'session') {
+      return resolveSessionMoment(this.session, time);
+    }
+
+    return resolveSegmentLoopMoment(
+      this.session,
+      this.playbackTarget.segmentId,
+      time,
+    );
+  }
+
+  private totalDurationForTarget(): number {
+    const playbackTarget = this.playbackTarget;
+    if (playbackTarget === 'session') {
+      return totalSessionDuration(this.session);
+    }
+
+    const segment = this.session.segments.find(
+      (item) => item.id === playbackTarget.segmentId,
+    );
+    if (!segment) {
+      return totalSessionDuration(this.session);
+    }
+
+    return Math.max(0.0001, segment.holdDuration + segment.transitionDuration);
+  }
+
+  private normalizeElapsedForTarget(elapsedSeconds: number): number {
+    const totalDuration = this.totalDurationForTarget();
+    if (totalDuration <= 0) {
+      return 0;
+    }
+
+    if (this.playbackTarget !== 'session') {
+      return ((elapsedSeconds % totalDuration) + totalDuration) % totalDuration;
+    }
+
+    return this.session.loop
+      ? ((elapsedSeconds % totalDuration) + totalDuration) % totalDuration
+      : Math.min(Math.max(0, elapsedSeconds), totalDuration);
+  }
+
+  private normalizePlaybackTarget(target: PlaybackTarget): PlaybackTarget {
+    if (target === 'session') {
+      return 'session';
+    }
+
+    return this.session.segments.some(
+      (segment) => segment.id === target.segmentId,
+    )
+      ? target
+      : 'session';
+  }
+
+  private isSamePlaybackTarget(
+    left: PlaybackTarget,
+    right: PlaybackTarget,
+  ): boolean {
+    if (left === 'session' && right === 'session') {
+      return true;
+    }
+
+    return (
+      left !== 'session' &&
+      right !== 'session' &&
+      left.segmentId === right.segmentId
+    );
   }
 }

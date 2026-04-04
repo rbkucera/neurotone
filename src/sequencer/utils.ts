@@ -428,6 +428,42 @@ export interface ResolvedSessionMoment {
   playbackState: SessionPlaybackState;
 }
 
+export function resolveSegmentLoopMoment(
+  session: SessionDefinition,
+  segmentId: string,
+  time: number,
+): ResolvedSessionMoment {
+  const segmentIndex = session.segments.findIndex(
+    (segment) => segment.id === segmentId,
+  );
+  if (segmentIndex < 0) {
+    return resolveSessionMoment(session, time);
+  }
+
+  const segment = session.segments[segmentIndex]!;
+  const loopDuration = Math.max(
+    0.0001,
+    segment.holdDuration + segment.transitionDuration,
+  );
+  const boundedTime = ((time % loopDuration) + loopDuration) % loopDuration;
+
+  return {
+    soundState: applySegmentOverrides(
+      segment.state,
+      segment.overrides,
+      boundedTime,
+    ),
+    playbackState: {
+      status: 'playing',
+      currentSegmentIndex: segmentIndex,
+      currentSegmentPhase: 'holding',
+      elapsedInPhase: boundedTime,
+      totalElapsed: boundedTime,
+      totalDuration: loopDuration,
+    },
+  };
+}
+
 export function resolveSessionMoment(
   session: SessionDefinition,
   time: number,
@@ -453,6 +489,46 @@ export function resolveSessionMoment(
     session.loop && totalDuration > 0
       ? ((time % totalDuration) + totalDuration) % totalDuration
       : clamp(time, 0, totalDuration);
+
+  const firstWindow = windows[0];
+  const lastWindow = windows[windows.length - 1];
+  if (
+    session.loop &&
+    totalDuration > 0 &&
+    windows.length > 1 &&
+    firstWindow &&
+    lastWindow &&
+    firstWindow.segment.transitionDuration > 0
+  ) {
+    const wrapTransitionDuration = firstWindow.segment.transitionDuration;
+    const wrapTransitionStart = totalDuration - wrapTransitionDuration;
+    if (boundedTime >= wrapTransitionStart) {
+      const localTransitionTime = boundedTime - wrapTransitionStart;
+      const progress =
+        localTransitionTime / Math.max(wrapTransitionDuration, 0.0001);
+      const baseState = interpolateSoundStates(
+        lastWindow.segment.state,
+        firstWindow.segment.state,
+        progress,
+      );
+
+      return {
+        soundState: applySegmentOverrides(
+          baseState,
+          firstWindow.segment.overrides,
+          localTransitionTime,
+        ),
+        playbackState: {
+          status: 'playing',
+          currentSegmentIndex: 0,
+          currentSegmentPhase: 'transitioning',
+          elapsedInPhase: localTransitionTime,
+          totalElapsed: boundedTime,
+          totalDuration,
+        },
+      };
+    }
+  }
 
   for (const window of windows) {
     const isLast = window.index === windows.length - 1;
@@ -512,12 +588,12 @@ export function resolveSessionMoment(
   }
 
   const lastSegment = windows[windows.length - 1].segment;
-  const lastWindow = windows[windows.length - 1];
+  const fallbackLastWindow = windows[windows.length - 1];
   return {
     soundState: applySegmentOverrides(
       lastSegment.state,
       lastSegment.overrides,
-      segmentWindowDuration(lastWindow),
+      segmentWindowDuration(fallbackLastWindow),
     ),
     playbackState: {
       status: 'complete',

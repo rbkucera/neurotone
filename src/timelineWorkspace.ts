@@ -12,6 +12,7 @@ export type AnalysisDockTab = 'envelope' | 'beat-map' | 'metrics';
 export interface TimelineWorkspaceUIState {
   tab: TimelineWorkspaceTab;
   composerModalOpen: boolean;
+  segmentLoopOnly: boolean;
   inspectorTab: TimelineInspectorTab;
   selectedSegmentId: string | null;
   selectedPairId: string | null;
@@ -54,12 +55,14 @@ export function normalizeTimelineWorkspaceUIState(
       : !prefersEditStage(session);
 
   const normalizedSelectedSegmentId =
-    input?.selectedSegmentId && validSegmentIds.has(input.selectedSegmentId)
-      ? input.selectedSegmentId
-      : session.segments[0]?.id ?? null;
-  const selectedSegment =
-    session.segments.find((segment) => segment.id === normalizedSelectedSegmentId) ??
-    session.segments[0];
+    input?.selectedSegmentId === null
+      ? null
+      : input?.selectedSegmentId && validSegmentIds.has(input.selectedSegmentId)
+        ? input.selectedSegmentId
+        : null;
+  const selectedSegment = session.segments.find(
+    (segment) => segment.id === normalizedSelectedSegmentId,
+  );
   const validPairIds = new Set(
     selectedSegment?.state.pairs.map((pair) => pair.id) ?? [],
   );
@@ -80,6 +83,10 @@ export function normalizeTimelineWorkspaceUIState(
   return {
     tab: 'timeline',
     composerModalOpen: nextComposerModalOpen,
+    segmentLoopOnly:
+      typeof input?.segmentLoopOnly === 'boolean'
+        ? input.segmentLoopOnly
+        : false,
     inspectorTab:
       input?.inspectorTab === 'segment'
         ? 'segment'
