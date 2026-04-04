@@ -753,7 +753,7 @@ function renderPairCard(
   `;
 }
 
-function renderSupportControls(noise: NoiseConfig, segmentGain: number, masterVolume: number): string {
+function renderSupportControls(noise: NoiseConfig, segmentGain: number): string {
   return `
     <section class="support-compact">
       <label class="toggle support-compact__toggle">
@@ -797,21 +797,6 @@ function renderSupportControls(noise: NoiseConfig, segmentGain: number, masterVo
           max="1"
           step="0.01"
           value="${segmentGain}"
-        />
-      </label>
-
-      <label class="control">
-        <div class="control__row">
-          <span>Master volume</span>
-          <output data-role="master-output">${formatPercent(masterVolume)}</output>
-        </div>
-        <input
-          data-input="masterVolume"
-          type="range"
-          min="0"
-          max="0.45"
-          step="0.01"
-          value="${masterVolume}"
         />
       </label>
     </section>
@@ -3849,7 +3834,6 @@ export function createApp(root: HTMLElement): void {
       supportControls.innerHTML = renderSupportControls(
         state.noise,
         state.gain,
-        masterVolume,
       );
     }
 
@@ -3859,9 +3843,6 @@ export function createApp(root: HTMLElement): void {
     const noiseModel = supportControls.querySelector<HTMLSelectElement>('select[data-input="noiseModel"]');
     const segmentGainRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="segmentGain"]');
     const segmentGainOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="segment-gain-output"]');
-    const masterRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="masterVolume"]');
-    const masterOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="master-output"]');
-
     if (noiseCheckbox) {
       noiseCheckbox.checked = state.noise.enabled;
     }
@@ -3879,12 +3860,6 @@ export function createApp(root: HTMLElement): void {
     }
     if (segmentGainOutput) {
       segmentGainOutput.value = formatPercent(state.gain);
-    }
-    if (masterRange) {
-      masterRange.value = String(masterVolume);
-    }
-    if (masterOutput) {
-      masterOutput.value = formatPercent(masterVolume);
     }
   };
 
