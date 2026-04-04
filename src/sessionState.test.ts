@@ -54,7 +54,7 @@ describe('share state encoding', () => {
                   gain: 0.8,
                 }),
               ],
-              masterGain: 0.22,
+              gain: 0.22,
               noise: {
                 enabled: true,
                 volume: 0.05,
@@ -142,7 +142,7 @@ describe('share state encoding', () => {
                   gain: 0.64,
                 }),
               ],
-              masterGain: 0.18,
+              gain: 0.18,
               noise: {
                 enabled: true,
                 volume: 0.055,
@@ -183,7 +183,7 @@ describe('share state encoding', () => {
                   gain: 0.64,
                 }),
               ],
-              masterGain: 0.18,
+              gain: 0.18,
               noise: {
                 enabled: true,
                 volume: 0.055,

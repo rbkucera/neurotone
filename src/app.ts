@@ -52,9 +52,11 @@ import {
   decodeShareableState,
   encodeShareableState,
   hasSeenHeadphoneNotice,
+  loadMasterVolume,
   loadStoredStateViewHint,
   loadStoredState,
   markHeadphoneNoticeSeen,
+  saveMasterVolume,
   saveStoredState,
   type ComposerDraft,
   type PlaybackMode,
@@ -751,7 +753,7 @@ function renderPairCard(
   `;
 }
 
-function renderSupportControls(noise: NoiseConfig, masterGain: number): string {
+function renderSupportControls(noise: NoiseConfig, segmentGain: number, masterVolume: number): string {
   return `
     <section class="support-compact">
       <label class="toggle support-compact__toggle">
@@ -785,16 +787,31 @@ function renderSupportControls(noise: NoiseConfig, masterGain: number): string {
 
       <label class="control">
         <div class="control__row">
-          <span>Master volume</span>
-          <output data-role="master-output">${formatPercent(masterGain)}</output>
+          <span>Segment gain</span>
+          <output data-role="segment-gain-output">${formatPercent(segmentGain)}</output>
         </div>
         <input
-          data-input="masterGain"
+          data-input="segmentGain"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="${segmentGain}"
+        />
+      </label>
+
+      <label class="control">
+        <div class="control__row">
+          <span>Master volume</span>
+          <output data-role="master-output">${formatPercent(masterVolume)}</output>
+        </div>
+        <input
+          data-input="masterVolume"
           type="range"
           min="0"
           max="0.45"
           step="0.01"
-          value="${masterGain}"
+          value="${masterVolume}"
         />
       </label>
     </section>
@@ -802,8 +819,8 @@ function renderSupportControls(noise: NoiseConfig, masterGain: number): string {
 }
 
 function describeAutomationTarget(target: AutomationTarget): string {
-  if (target === 'masterGain') {
-    return 'Master volume';
+  if (target === 'gain') {
+    return 'Segment gain';
   }
   if (target === 'noise.volume') {
     return 'Noise level';
@@ -837,7 +854,7 @@ function collectAutomationTargets(session: SessionDefinition): AutomationTarget[
   });
 
   return [
-    'masterGain',
+    'gain',
     'noise.volume',
     'noise.enabled',
     'noise.model',
@@ -891,8 +908,8 @@ function overrideValueControl(target: AutomationTarget): OverrideValueControl {
     return { kind: 'enum' };
   }
 
-  if (target === 'masterGain') {
-    return { kind: 'numeric', min: 0, max: 0.45, step: 0.01 };
+  if (target === 'gain') {
+    return { kind: 'numeric', min: 0, max: 1, step: 0.01 };
   }
 
   if (target === 'noise.volume') {
@@ -980,7 +997,7 @@ function renderKeyframeValueInput(
   }
 
   const step =
-    lane.target === 'masterGain' || lane.target === 'noise.volume'
+    lane.target === 'gain' || lane.target === 'noise.volume'
       ? '0.01'
       : lane.target.endsWith('.gain')
         ? '0.01'
@@ -1081,8 +1098,8 @@ function renderLaneCards(session: SessionDefinition): string {
 }
 
 function shortAutomationTargetLabel(target: AutomationTarget): string {
-  if (target === 'masterGain') {
-    return 'Master';
+  if (target === 'gain') {
+    return 'Gain';
   }
   if (target === 'noise.volume') {
     return 'Noise';
@@ -1605,7 +1622,7 @@ function formatAutomationValue(
   }
 
   if (
-    (target === 'masterGain' || target === 'noise.volume' || target.endsWith('.gain')) &&
+    (target === 'gain' || target === 'noise.volume' || target.endsWith('.gain')) &&
     typeof value === 'number'
   ) {
     return formatPercent(value);
@@ -2348,7 +2365,7 @@ function collectSegmentOverrideTargets(
   segment: SessionSegment,
 ): SegmentOverrideTarget[] {
   return [
-    'masterGain',
+    'gain',
     'noise.volume',
     'noise.enabled',
     'noise.model',
@@ -2364,8 +2381,8 @@ function describeSegmentOverrideTarget(
   segment: SessionSegment,
   target: SegmentOverrideTarget,
 ): string {
-  if (target === 'masterGain') {
-    return 'Master volume';
+  if (target === 'gain') {
+    return 'Segment gain';
   }
   if (target === 'noise.volume') {
     return 'Noise level';
@@ -2394,8 +2411,8 @@ function shortSegmentOverrideTargetLabel(
   segment: SessionSegment,
   target: SegmentOverrideTarget,
 ): string {
-  if (target === 'masterGain') {
-    return 'Master';
+  if (target === 'gain') {
+    return 'Gain';
   }
   if (target === 'noise.volume') {
     return 'Noise';
@@ -2584,8 +2601,8 @@ function segmentStartValueForOverrideTarget(
   segment: SessionSegment,
   target: SegmentOverrideTarget,
 ): number | boolean | NoiseModel {
-  if (target === 'masterGain') {
-    return normalizeKeyframeValue(target, segment.state.masterGain);
+  if (target === 'gain') {
+    return normalizeKeyframeValue(target, segment.state.gain);
   }
   if (target === 'noise.volume') {
     return normalizeKeyframeValue(target, segment.state.noise.volume);
@@ -3100,7 +3117,7 @@ function renderVisualizerBandLeds(
 
 function renderVisualizerWorkspace(
   visualizerId: string,
-  masterGain: number,
+  masterVolume: number,
   bandActivity: VisualizerBandActivity,
 ): string {
 
@@ -3139,15 +3156,15 @@ function renderVisualizerWorkspace(
             <label class="control visualizer-surface__intensity">
               <span class="control__row">
                 <span>Volume</span>
-                <output data-role="master-output">${formatPercent(masterGain)}</output>
+                <output data-role="master-output">${formatPercent(masterVolume)}</output>
               </span>
               <input
-                data-input="masterGain"
+                data-input="masterVolume"
                 type="range"
                 min="0"
                 max="0.45"
                 step="0.01"
-                value="${masterGain}"
+                value="${masterVolume}"
               />
             </label>
           </div>
@@ -3255,6 +3272,8 @@ function renderTimelineTransport(
 export function createApp(root: HTMLElement): void {
   const engine = new BinauralEngine();
   const sequencer = new SessionSequencer(engine);
+  let masterVolume = loadMasterVolume();
+  sequencer.setMasterVolume(masterVolume);
 
   let carrierDisplayMode: CarrierDisplayMode = 'note';
   const hashRestored = decodeShareableState(window.location.hash);
@@ -3422,7 +3441,7 @@ export function createApp(root: HTMLElement): void {
     const state = selectedState();
     engine.setBaseParams({
       pairs: state.pairs,
-      masterGain: state.masterGain,
+      masterGain: state.gain * masterVolume,
     });
     engine.setNoise(state.noise);
     syncEngineSnapshot();
@@ -3829,7 +3848,8 @@ export function createApp(root: HTMLElement): void {
     if (renderSupport) {
       supportControls.innerHTML = renderSupportControls(
         state.noise,
-        state.masterGain,
+        state.gain,
+        masterVolume,
       );
     }
 
@@ -3837,7 +3857,9 @@ export function createApp(root: HTMLElement): void {
     const noiseRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="noiseVolume"]');
     const noiseOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="noise-output"]');
     const noiseModel = supportControls.querySelector<HTMLSelectElement>('select[data-input="noiseModel"]');
-    const masterRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="masterGain"]');
+    const segmentGainRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="segmentGain"]');
+    const segmentGainOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="segment-gain-output"]');
+    const masterRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="masterVolume"]');
     const masterOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="master-output"]');
 
     if (noiseCheckbox) {
@@ -3852,11 +3874,17 @@ export function createApp(root: HTMLElement): void {
     if (noiseModel) {
       noiseModel.value = state.noise.model;
     }
+    if (segmentGainRange) {
+      segmentGainRange.value = String(state.gain);
+    }
+    if (segmentGainOutput) {
+      segmentGainOutput.value = formatPercent(state.gain);
+    }
     if (masterRange) {
-      masterRange.value = String(state.masterGain);
+      masterRange.value = String(masterVolume);
     }
     if (masterOutput) {
-      masterOutput.value = formatPercent(state.masterGain);
+      masterOutput.value = formatPercent(masterVolume);
     }
   };
 
@@ -5110,7 +5138,7 @@ export function createApp(root: HTMLElement): void {
         : playbackMode === 'visualizer'
           ? renderVisualizerWorkspace(
               activeVisualizerId,
-              selectedSegmentRequired().state.masterGain,
+              masterVolume,
               visualizerBandActivity,
             )
           : renderManualWorkspace(
@@ -5581,37 +5609,32 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
-    if (inputKey === 'masterGain') {
+    if (inputKey === 'segmentGain') {
       const gainValue = Number((target as HTMLInputElement).value);
-      if (playbackMode === 'visualizer') {
-        const updatedSegments = session.segments.map((segment) =>
-          createSessionSegment({
-            ...segment,
-            state: sanitizeSessionSoundState({
-              ...segment.state,
-              masterGain: gainValue,
-            }),
+      updateSelectedSegment(
+        (segment) => ({
+          ...segment,
+          state: sanitizeSessionSoundState({
+            ...segment.state,
+            gain: gainValue,
           }),
-        );
-        replaceSession(
-          createSessionDefinition({ ...session, segments: updatedSegments }),
-          { rerender: false },
-        );
-      } else {
-        updateSelectedSegment(
-          (segment) => ({
-            ...segment,
-            state: sanitizeSessionSoundState({
-              ...segment.state,
-              masterGain: gainValue,
-            }),
-          }),
-          false,
-        );
-      }
-      const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="master-output"]');
+        }),
+        false,
+      );
+      const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="segment-gain-output"]');
       if (output) {
         output.value = formatPercent(gainValue);
+      }
+      return;
+    }
+
+    if (inputKey === 'masterVolume') {
+      masterVolume = Math.min(1, Math.max(0, Number((target as HTMLInputElement).value)));
+      sequencer.setMasterVolume(masterVolume);
+      saveMasterVolume(masterVolume);
+      const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="master-output"]');
+      if (output) {
+        output.value = formatPercent(masterVolume);
       }
       return;
     }
@@ -6746,7 +6769,7 @@ export function createApp(root: HTMLElement): void {
         return;
       }
       const targets = collectSegmentOverrideTargets(selected);
-      const defaultTarget = targets[0] ?? 'masterGain';
+      const defaultTarget = targets[0] ?? 'gain';
       const startValue = segmentStartValueForOverrideTarget(
         selected,
         defaultTarget,

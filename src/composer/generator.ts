@@ -12,7 +12,7 @@ interface IntentProfile {
   baseBeat: number;
   beatSpread: number;
   transitionRatio: number;
-  masterGain: number;
+  gain: number;
   noise: NoiseConfig;
 }
 
@@ -21,7 +21,7 @@ const INTENT_PROFILES: Record<CompositionRequest['intent'], IntentProfile> = {
     baseBeat: 2.4,
     beatSpread: 0.45,
     transitionRatio: 0.45,
-    masterGain: 0.18,
+    gain: 0.82,
     noise: {
       enabled: true,
       volume: 0.055,
@@ -32,7 +32,7 @@ const INTENT_PROFILES: Record<CompositionRequest['intent'], IntentProfile> = {
     baseBeat: 6,
     beatSpread: 0.65,
     transitionRatio: 0.38,
-    masterGain: 0.2,
+    gain: 0.91,
     noise: {
       enabled: true,
       volume: 0.05,
@@ -43,7 +43,7 @@ const INTENT_PROFILES: Record<CompositionRequest['intent'], IntentProfile> = {
     baseBeat: 10,
     beatSpread: 0.9,
     transitionRatio: 0.32,
-    masterGain: 0.22,
+    gain: 1,
     noise: {
       enabled: true,
       volume: 0.045,
@@ -54,7 +54,7 @@ const INTENT_PROFILES: Record<CompositionRequest['intent'], IntentProfile> = {
     baseBeat: 18,
     beatSpread: 1.4,
     transitionRatio: 0.22,
-    masterGain: 0.2,
+    gain: 0.91,
     noise: {
       enabled: true,
       volume: 0.035,
@@ -65,7 +65,7 @@ const INTENT_PROFILES: Record<CompositionRequest['intent'], IntentProfile> = {
     baseBeat: 8,
     beatSpread: 1.25,
     transitionRatio: 0.3,
-    masterGain: 0.2,
+    gain: 0.91,
     noise: {
       enabled: true,
       volume: 0.045,
@@ -121,7 +121,7 @@ function createSegmentState(
 
   return sanitizeSessionSoundState({
     pairs,
-    masterGain: profile.masterGain,
+    gain: profile.gain,
     noise: profile.noise,
   });
 }

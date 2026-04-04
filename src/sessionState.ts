@@ -14,6 +14,7 @@ import {
 
 export const SESSION_STORAGE_KEY = 'neurotone.session.v4';
 export const HEADPHONE_NOTICE_KEY = 'neurotone.headphone-notice.v1';
+const MASTER_VOLUME_KEY = 'neurotone.master-volume.v1';
 
 export type PlaybackMode = 'timeline' | 'visualizer';
 
@@ -89,7 +90,6 @@ const DEFAULTS = {
   carrierHz: 200,
   beatHz: 10,
   gain: 1,
-  masterGain: 0.22,
   noiseEnabled: false,
   noiseVolume: 0.06,
   noiseModel: 'soft' as NoiseModel,
@@ -128,7 +128,7 @@ function createDefaultSession(): SessionDefinition {
               gain: 0.36,
             },
           ],
-          masterGain: 0.1,
+          gain: 0.1,
           noise: {
             enabled: true,
             volume: 0.26,
@@ -232,7 +232,7 @@ export function stateFromSnapshot(
           transitionDuration: 0,
           state: sanitizeSessionSoundState({
             pairs: snapshot.base.pairs,
-            masterGain: snapshot.base.masterGain,
+            gain: snapshot.base.masterGain,
             noise: snapshot.noise,
           }),
         }),
@@ -310,8 +310,8 @@ function compactShareStateV5(state: ShareableState): CompactShareStateV5 {
               g: pair.gain !== DEFAULTS.gain ? pair.gain : undefined,
             })),
             m:
-              segment.state.masterGain !== DEFAULTS.masterGain
-                ? segment.state.masterGain
+              segment.state.gain !== DEFAULTS.gain
+                ? segment.state.gain
                 : undefined,
             n: compactNoiseV5(
               segment.state.noise.enabled,
@@ -370,14 +370,14 @@ function expandCompactShareStateV5(
               beatHz: pair.b ?? DEFAULTS.beatHz,
               gain: pair.g ?? DEFAULTS.gain,
             })) ?? [],
-          masterGain: segment.s?.m ?? DEFAULTS.masterGain,
+          gain: segment.s?.m ?? DEFAULTS.gain,
           noise: expandNoiseV5(segment.s?.n),
         },
         overrides:
           segment.o?.map((lane, laneIndex) => ({
             id: `override-${segmentIndex}-${laneIndex}`,
             label: lane.t,
-            target: lane.t,
+            target: (lane.t as string) === 'masterGain' ? 'gain' : lane.t,
             interpolation: lane.p === 's' ? 'step' : 'linear',
             enabled: lane.e === 0 ? false : true,
             keyframes:
@@ -522,6 +522,29 @@ export function hasSeenHeadphoneNotice(): boolean {
 export function markHeadphoneNoticeSeen(): void {
   try {
     window.localStorage.setItem(HEADPHONE_NOTICE_KEY, '1');
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
+}
+
+export function loadMasterVolume(): number {
+  try {
+    const raw = window.localStorage.getItem(MASTER_VOLUME_KEY);
+    if (raw !== null) {
+      const value = Number(raw);
+      if (Number.isFinite(value)) {
+        return Math.min(1, Math.max(0, value));
+      }
+    }
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
+  return 0.22;
+}
+
+export function saveMasterVolume(value: number): void {
+  try {
+    window.localStorage.setItem(MASTER_VOLUME_KEY, String(value));
   } catch {
     // Fails silently for blocked storage or quota issues.
   }

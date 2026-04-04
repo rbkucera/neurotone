@@ -57,6 +57,8 @@ export class SessionSequencer {
 
   private playbackTarget: PlaybackTarget = 'session';
 
+  private masterVolume = 0.22;
+
   private loopOverride: boolean | null = null;
 
   constructor(private readonly engine: BinauralEngine) {}
@@ -78,6 +80,14 @@ export class SessionSequencer {
     };
     this.applySoundState(initialMoment.soundState);
     this.notifyTick();
+  }
+
+  setMasterVolume(value: number): void {
+    this.masterVolume = Math.min(1, Math.max(0, value));
+    if (this.playbackState.status === 'playing' || this.playbackState.status === 'paused') {
+      const moment = this.resolveMoment(this.playbackState.totalElapsed);
+      this.applySoundState(moment.soundState);
+    }
   }
 
   replaceSession(session: SessionDefinition): void {
@@ -522,7 +532,7 @@ export class SessionSequencer {
 
     this.engine.setBaseParams({
       pairs: soundState.pairs,
-      masterGain: soundState.masterGain,
+      masterGain: soundState.gain * this.masterVolume,
     });
     this.engine.setNoise(soundState.noise);
   }

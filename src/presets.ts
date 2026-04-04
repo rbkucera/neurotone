@@ -52,7 +52,7 @@ export const presets: PresetDefinition[] = [
           gain: 0.9,
         }),
       ],
-      masterGain: 0.24,
+      gain: 1,
       noise: {
         enabled: false,
         volume: 0.05,
@@ -79,7 +79,7 @@ export const presets: PresetDefinition[] = [
           gain: 0.46,
         }),
       ],
-      masterGain: 0.2,
+      gain: 0.91,
       noise: {
         enabled: true,
         volume: 0.05,
@@ -106,7 +106,7 @@ export const presets: PresetDefinition[] = [
           gain: 0.36,
         }),
       ],
-      masterGain: 0.18,
+      gain: 0.82,
       noise: {
         enabled: true,
         volume: 0.04,

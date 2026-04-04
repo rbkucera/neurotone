@@ -8,12 +8,12 @@ export type AudioIntent = 'delta' | 'theta' | 'alpha' | 'beta' | 'mixed';
 
 export interface SessionSoundState {
   pairs: TonePair[];
-  masterGain: number;
+  gain: number;
   noise: NoiseConfig;
 }
 
 export type SegmentOverrideTarget =
-  | 'masterGain'
+  | 'gain'
   | 'noise.volume'
   | 'noise.enabled'
   | 'noise.model'
