@@ -5583,16 +5583,29 @@ export function createApp(root: HTMLElement): void {
 
     if (inputKey === 'masterGain') {
       const gainValue = Number((target as HTMLInputElement).value);
-      updateSelectedSegment(
-        (segment) => ({
-          ...segment,
-          state: sanitizeSessionSoundState({
-            ...segment.state,
-            masterGain: gainValue,
-          }),
-        }),
-        false,
-      );
+      const playbackState = activePlaybackState();
+      const isVisualizerPlaying =
+        playbackMode === 'visualizer' && playbackState.status === 'playing';
+      const targetSegment = isVisualizerPlaying
+        ? session.segments[playbackState.currentSegmentIndex]
+        : selectedSegmentOrNull();
+      if (targetSegment) {
+        const updatedSegments = session.segments.map((segment) =>
+          segment.id === targetSegment.id
+            ? createSessionSegment({
+                ...segment,
+                state: sanitizeSessionSoundState({
+                  ...segment.state,
+                  masterGain: gainValue,
+                }),
+              })
+            : segment,
+        );
+        replaceSession(
+          createSessionDefinition({ ...session, segments: updatedSegments }),
+          { rerender: false },
+        );
+      }
       const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="master-output"]');
       if (output) {
         output.value = formatPercent(gainValue);
