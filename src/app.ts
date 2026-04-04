@@ -3290,6 +3290,8 @@ export function createApp(root: HTMLElement): void {
   let visualizerLastRendererError: string | null = null;
   let visualizerCanvasRef: HTMLCanvasElement | null = null;
   let visualizerBandActivity = createEmptyBandActivity();
+  let visualizerDecayFrameId: number | null = null;
+  let visualizerDecayStartMs: number | null = null;
   const ribbonFallbackStateByCanvas = new WeakMap<
     HTMLCanvasElement,
     {
@@ -4665,10 +4667,36 @@ export function createApp(root: HTMLElement): void {
     return drawCanvas;
   };
 
+  const startVisualizerDecay = (): void => {
+    if (visualizerDecayFrameId !== null) return;
+    visualizerDecayStartMs = performance.now();
+    const tick = (): void => {
+      const now = performance.now();
+      syncVisualizerCanvas(now);
+      if (visualizerDecayStartMs !== null && now - visualizerDecayStartMs > 2000) {
+        stopVisualizerDecay();
+        syncVisualizerCanvas(performance.now());
+        return;
+      }
+      visualizerDecayFrameId = requestAnimationFrame(tick);
+    };
+    visualizerDecayFrameId = requestAnimationFrame(tick);
+  };
+
+  const stopVisualizerDecay = (): void => {
+    if (visualizerDecayFrameId !== null) {
+      cancelAnimationFrame(visualizerDecayFrameId);
+      visualizerDecayFrameId = null;
+    }
+    visualizerDecayStartMs = null;
+  };
+
   const syncVisualizerCanvas = (nowMs = performance.now()): void => {
+    const playing = activePlaybackState().status === 'playing';
+    const beatMap = playing ? computeBeatMap(engineState.pairs) : [];
     visualizerBandActivity = advanceBandActivity(
       visualizerBandActivity,
-      computeBeatMap(engineState.pairs),
+      beatMap,
       0.2,
     );
     syncVisualizerBandLeds();
@@ -4718,6 +4746,7 @@ export function createApp(root: HTMLElement): void {
       deltaMs,
       intensity: visualizerIntensity,
       bandActivity: visualizerBandActivity,
+      isPlaying: playing,
     };
 
     if (visualizerPixiFailed) {
@@ -5302,6 +5331,12 @@ export function createApp(root: HTMLElement): void {
     syncAdvancedPlaybackVisuals();
     syncVisualizerCanvas();
     syncDiagnostics();
+    if (
+      playbackMode === 'visualizer' &&
+      activePlaybackState().status === 'complete'
+    ) {
+      startVisualizerDecay();
+    }
   });
 
   sequencer.onSegmentChange(() => {
@@ -6011,6 +6046,9 @@ export function createApp(root: HTMLElement): void {
       pendingRemoveSegmentId = null;
       renderLayout();
       persistAppState();
+      if (nextMode === 'visualizer' && activePlaybackState().status !== 'playing') {
+        startVisualizerDecay();
+      }
       return;
     }
 
@@ -6146,6 +6184,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'play-timeline') {
+      stopVisualizerDecay();
       clearTimelineDragState();
       syncSequencerPlaybackTarget();
       await sequencer.play();
@@ -6156,6 +6195,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'visualizer-play') {
+      stopVisualizerDecay();
       syncSequencerPlaybackTarget();
       if (activePlaybackState().status === 'paused') {
         await sequencer.resume();
@@ -6173,6 +6213,7 @@ export function createApp(root: HTMLElement): void {
       syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      startVisualizerDecay();
       return;
     }
 
@@ -6181,10 +6222,14 @@ export function createApp(root: HTMLElement): void {
       syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      if (playbackMode === 'visualizer') {
+        startVisualizerDecay();
+      }
       return;
     }
 
     if (action === 'resume-timeline') {
+      stopVisualizerDecay();
       await sequencer.resume();
       syncEngineSnapshot();
       renderLayout();
@@ -6197,6 +6242,9 @@ export function createApp(root: HTMLElement): void {
       syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      if (playbackMode === 'visualizer') {
+        startVisualizerDecay();
+      }
       return;
     }
 
@@ -6894,6 +6942,9 @@ export function createApp(root: HTMLElement): void {
         syncEngineSnapshot();
         renderLayout();
         persistAppState();
+        if (playbackMode === 'visualizer') {
+          startVisualizerDecay();
+        }
         return;
       }
     }
@@ -6907,9 +6958,14 @@ export function createApp(root: HTMLElement): void {
       const status = activePlaybackState().status;
       if (status === 'playing') {
         await sequencer.pause();
+        if (playbackMode === 'visualizer') {
+          startVisualizerDecay();
+        }
       } else if (status === 'paused') {
+        stopVisualizerDecay();
         await sequencer.resume();
       } else {
+        stopVisualizerDecay();
         syncSequencerPlaybackTarget();
         await sequencer.play();
       }
