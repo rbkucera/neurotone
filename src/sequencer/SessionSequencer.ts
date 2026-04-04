@@ -57,6 +57,8 @@ export class SessionSequencer {
 
   private playbackTarget: PlaybackTarget = 'session';
 
+  private loopOverride: boolean | null = null;
+
   constructor(private readonly engine: BinauralEngine) {}
 
   load(session: SessionDefinition): void {
@@ -64,6 +66,7 @@ export class SessionSequencer {
     this.detachVisibilitySync();
     this.session = rebuildSessionAutomationLanes(createSessionDefinition(session));
     this.playbackTarget = 'session';
+    this.loopOverride = null;
     this.pausedAtSeconds = 0;
     this.lastSegmentIndex = -1;
     const initialMoment = this.resolveMoment(0);
@@ -133,6 +136,44 @@ export class SessionSequencer {
     }
 
     this.playbackTarget = normalizedTarget;
+    const preservedElapsed =
+      this.playbackState.status === 'playing' || this.playbackState.status === 'paused'
+        ? this.playbackState.totalElapsed
+        : 0;
+    const effectiveElapsed = this.normalizeElapsedForTarget(preservedElapsed);
+    this.pausedAtSeconds = effectiveElapsed;
+
+    if (this.playbackState.status === 'playing') {
+      this.startedAtMs = performance.now() - effectiveElapsed * 1000;
+    }
+
+    const nextStatus =
+      this.playbackState.status === 'complete'
+        ? 'idle'
+        : this.playbackState.status;
+    const moment = this.resolveMoment(effectiveElapsed);
+    this.applySoundState(moment.soundState);
+    this.playbackState = {
+      ...moment.playbackState,
+      status: nextStatus,
+    };
+    this.lastSegmentIndex = -1;
+    this.notifySegment(moment.playbackState.currentSegmentIndex);
+    this.notifyTick();
+  }
+
+  setLoopOverride(loopOverride: boolean | null): void {
+    const normalizedOverride =
+      typeof loopOverride === 'boolean' ? loopOverride : null;
+    if (this.loopOverride === normalizedOverride) {
+      return;
+    }
+
+    this.loopOverride = normalizedOverride;
+    if (this.playbackTarget !== 'session') {
+      return;
+    }
+
     const preservedElapsed =
       this.playbackState.status === 'playing' || this.playbackState.status === 'paused'
         ? this.playbackState.totalElapsed
@@ -424,7 +465,7 @@ export class SessionSequencer {
 
     if (
       this.playbackTarget === 'session' &&
-      !this.session.loop &&
+      !this.isLoopEnabled() &&
       elapsedSeconds >= totalDuration
     ) {
       const finalMoment = this.resolveMoment(totalDuration);
@@ -507,7 +548,17 @@ export class SessionSequencer {
 
   private resolveMoment(time: number): ResolvedSessionMoment {
     if (this.playbackTarget === 'session') {
-      return resolveSessionMoment(this.session, time);
+      if (this.loopOverride === null || this.loopOverride === this.session.loop) {
+        return resolveSessionMoment(this.session, time);
+      }
+
+      return resolveSessionMoment(
+        {
+          ...this.session,
+          loop: this.loopOverride,
+        },
+        time,
+      );
     }
 
     return resolveSegmentLoopMoment(
@@ -543,9 +594,13 @@ export class SessionSequencer {
       return ((elapsedSeconds % totalDuration) + totalDuration) % totalDuration;
     }
 
-    return this.session.loop
+    return this.isLoopEnabled()
       ? ((elapsedSeconds % totalDuration) + totalDuration) % totalDuration
       : Math.min(Math.max(0, elapsedSeconds), totalDuration);
+  }
+
+  private isLoopEnabled(): boolean {
+    return this.loopOverride ?? this.session.loop;
   }
 
   private normalizePlaybackTarget(target: PlaybackTarget): PlaybackTarget {

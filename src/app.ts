@@ -48,9 +48,11 @@ import {
 import {
   composerDraftToRequest,
   createInitialShareableState,
+  decodeInitialViewHintFromHash,
   decodeShareableState,
   encodeShareableState,
   hasSeenHeadphoneNotice,
+  loadStoredStateViewHint,
   loadStoredState,
   markHeadphoneNoticeSeen,
   saveStoredState,
@@ -68,6 +70,11 @@ import {
   type TimelineWorkspaceTab,
   type TimelineWorkspaceUIState,
 } from './timelineWorkspace';
+import {
+  DEFAULT_VISUALIZER_ID,
+  getVisualizerModule,
+  VISUALIZER_REGISTRY,
+} from './visualizers/registry';
 
 const UI_LIMITS = {
   carrierSliderMin: 40,
@@ -113,6 +120,7 @@ const ADVANCED_LAYOUT = {
 };
 
 type TimelineDragInsertPosition = 'before' | 'after';
+type AppViewMode = PlaybackMode | 'analysis';
 
 function escapeHtml(value: string): string {
   return value
@@ -222,20 +230,20 @@ function renderPlaybackModeToggle(currentMode: PlaybackMode): string {
   return `
     <div class="segmented-control">
       <button
-        class="segmented-control__button ${currentMode === 'manual' ? 'is-active' : ''}"
-        data-action="set-playback-mode"
-        data-mode="manual"
-        type="button"
-      >
-        Manual
-      </button>
-      <button
         class="segmented-control__button ${currentMode === 'timeline' ? 'is-active' : ''}"
         data-action="set-playback-mode"
         data-mode="timeline"
         type="button"
       >
         Timeline
+      </button>
+      <button
+        class="segmented-control__button ${currentMode === 'visualizer' ? 'is-active' : ''}"
+        data-action="set-playback-mode"
+        data-mode="visualizer"
+        type="button"
+      >
+        Visualizer
       </button>
     </div>
   `;
@@ -2075,24 +2083,23 @@ function renderManualDiagnosticsMarkup(
   `;
 }
 
-function renderManualHeader(
+function renderAnalysisHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
-  playbackMode: PlaybackMode,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <div class="tool-header__session">
-            <p class="eyebrow">Manual studio</p>
+            <p class="eyebrow">Analysis mode</p>
             <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
           </div>
 
           <div class="tool-header__controls">
-            <label class="tool-header__mode">
-              ${renderPlaybackModeToggle(playbackMode)}
-            </label>
+            <button class="transport transport--compact" data-action="return-to-timeline" type="button">
+              Return to timeline
+            </button>
 
             <button class="ghost-button tool-header__share" data-action="share-link" type="button">
               <span data-role="share-label">${shareButtonLabel}</span>
@@ -2110,12 +2117,15 @@ function renderTimelineHeader(
   shareButtonLabel: string,
   playbackMode: PlaybackMode,
 ): string {
+  const title =
+    playbackMode === 'visualizer' ? 'Visualizer studio' : 'Timeline studio';
+
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <div class="tool-header__session">
-            <p class="eyebrow">Timeline studio</p>
+            <p class="eyebrow">${title}</p>
             <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
           </div>
 
@@ -2270,6 +2280,7 @@ function renderTimelineInspectorActions(
 ): string {
   return `
     <div class="inspector-actions">
+      <button class="transport transport--compact" data-action="enter-analysis-mode" data-segment-id="${selectedSegmentId}" type="button">Analysis mode</button>
       <button class="ghost-button ghost-button--compact" data-action="seek-segment" data-segment-id="${selectedSegmentId}" type="button">Jump</button>
       <button class="ghost-button ghost-button--compact" data-action="add-segment-after" data-segment-id="${selectedSegmentId}" type="button">Add after</button>
       <button class="ghost-button ghost-button--compact" data-action="duplicate-segment" data-segment-id="${selectedSegmentId}" type="button">Duplicate</button>
@@ -2955,7 +2966,7 @@ function renderManualWorkspace(
           </div>
 
           <div class="manual-workspace__summary">
-            <p class="subtle">Auditioning segment ${selectedIndex + 1} of ${session.segments.length}. Manual mode plays only the currently selected segment.</p>
+            <p class="subtle">Auditioning segment ${selectedIndex + 1} of ${session.segments.length}. Analysis mode plays only the currently selected segment.</p>
           </div>
 
           <div class="manual-editor__body">
@@ -2991,6 +3002,58 @@ function renderManualWorkspace(
           </div>
         </section>
       </div>
+    </section>
+  `;
+}
+
+function renderVisualizerTransport(playbackState: SessionPlaybackState): string {
+  const playing = playbackState.status === 'playing';
+
+  return `
+    <div class="transport-row__line transport-row__line--controls">
+      <div class="transport-row__cluster transport-row__cluster--primary">
+        <span class="transport-row__label">Visualizer</span>
+        <button class="transport transport--compact" data-action="visualizer-play" type="button" ${playing ? 'disabled' : ''}>Play</button>
+        <button class="ghost-button ghost-button--compact" data-action="visualizer-pause" type="button" ${playing ? '' : 'disabled'}>Pause</button>
+      </div>
+    </div>
+    <div class="transport-row__line transport-row__line--status">
+      <div class="transport-row__readout" data-role="visualizer-readout"></div>
+    </div>
+  `;
+}
+
+function renderVisualizerWorkspace(
+  visualizerId: string,
+): string {
+  return `
+    <section class="panel panel--workspace panel--workspace-visualizer">
+      <section class="transport-row" data-role="visualizer-transport"></section>
+
+      <section class="panel--embedded panel--visualizer-surface">
+        <div class="visualizer-surface__header">
+          <div>
+            <p class="layer-card__eyebrow">Visualizer</p>
+            <h3>Playback view</h3>
+          </div>
+          <label class="select-field select-field--compact visualizer-surface__select">
+            <span>Style</span>
+            <select data-input="visualizer-module">
+              ${VISUALIZER_REGISTRY.map(
+                (module) => `
+                  <option value="${module.id}" ${
+                    module.id === visualizerId ? 'selected' : ''
+                  }>
+                    ${escapeHtml(module.label)}
+                  </option>
+                `,
+              ).join('')}
+            </select>
+          </label>
+        </div>
+
+        <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280"></canvas>
+      </section>
     </section>
   `;
 }
@@ -3093,16 +3156,26 @@ export function createApp(root: HTMLElement): void {
   const sequencer = new SessionSequencer(engine);
 
   let carrierDisplayMode: CarrierDisplayMode = 'note';
+  const hashRestored = decodeShareableState(window.location.hash);
+  const storedRestored = hashRestored ? null : loadStoredState();
   let restored =
-    decodeShareableState(window.location.hash) ??
-    loadStoredState() ??
+    hashRestored ??
+    storedRestored ??
     createInitialShareableState();
-  let playbackMode: PlaybackMode = restored.mode;
+  const initialViewHint =
+    hashRestored !== null
+      ? decodeInitialViewHintFromHash(window.location.hash)
+      : storedRestored !== null
+        ? loadStoredStateViewHint()
+        : null;
+  let playbackMode: AppViewMode =
+    initialViewHint === 'analysis' ? 'analysis' : restored.mode;
   let session: SessionDefinition = restored.session;
   let composerDraft: ComposerDraft = restored.composer;
   let timelineUI = loadTimelineWorkspaceUIState(session);
   let manualDiagnosticsTab: ManualDiagnosticsTab = 'beat-map';
   let manualDiagnosticsOpen = false;
+  let activeVisualizerId = DEFAULT_VISUALIZER_ID;
   let revealedChipActionsSegmentId: string | null = null;
   let pendingRemoveSegmentId: string | null = null;
   let draggedSegmentId: string | null = null;
@@ -3182,9 +3255,12 @@ export function createApp(root: HTMLElement): void {
       keyframes: lane.keyframes.map((keyframe) => ({ ...keyframe })),
     }));
 
+  const shareablePlaybackMode = (): PlaybackMode =>
+    playbackMode === 'analysis' ? 'timeline' : playbackMode;
+
   const currentShareableState = (): ShareableState => ({
     presetId: null,
-    mode: playbackMode,
+    mode: shareablePlaybackMode(),
     session,
     composer: composerDraft,
   });
@@ -3215,10 +3291,18 @@ export function createApp(root: HTMLElement): void {
     sequencer.getPlaybackState();
 
   const timelineIsPlaying = (): boolean =>
-    playbackMode === 'timeline' &&
+    (playbackMode === 'timeline' || playbackMode === 'visualizer') &&
     activePlaybackState().status === 'playing';
 
   const syncSequencerPlaybackTarget = (): void => {
+    if (playbackMode === 'visualizer') {
+      sequencer.setLoopOverride(true);
+      sequencer.setPlaybackTarget('session');
+      return;
+    }
+
+    sequencer.setLoopOverride(null);
+
     if (
       playbackMode === 'timeline' &&
       timelineUI.segmentLoopOnly &&
@@ -3235,7 +3319,7 @@ export function createApp(root: HTMLElement): void {
   };
 
   const headerMetaText = (): string => {
-    if (playbackMode === 'manual') {
+    if (playbackMode === 'analysis') {
       return `Segment ${selectedSegmentIndex() + 1} selected for manual audition`;
     }
 
@@ -3253,11 +3337,11 @@ export function createApp(root: HTMLElement): void {
     if (statusPill) {
       const timelineState = activePlaybackState();
       const running =
-        playbackMode === 'timeline'
+        playbackMode !== 'analysis'
           ? timelineState.status === 'playing'
           : engineState.playbackState === 'running';
       statusPill.textContent =
-        playbackMode === 'timeline'
+        playbackMode !== 'analysis'
           ? timelineState.status === 'complete'
             ? 'Complete'
             : timelineState.status === 'paused'
@@ -3976,6 +4060,43 @@ export function createApp(root: HTMLElement): void {
     });
   };
 
+  const syncVisualizerTransport = (): void => {
+    const transport = root.querySelector<HTMLElement>('[data-role="visualizer-transport"]');
+    if (!transport) {
+      return;
+    }
+
+    const playbackState = activePlaybackState();
+    const playing = playbackState.status === 'playing';
+    const playButton = transport.querySelector<HTMLButtonElement>('[data-action="visualizer-play"]');
+    const pauseButton = transport.querySelector<HTMLButtonElement>('[data-action="visualizer-pause"]');
+    const readout = transport.querySelector<HTMLElement>('[data-role="visualizer-readout"]');
+
+    if (!playButton || !pauseButton || !readout) {
+      transport.innerHTML = renderVisualizerTransport(playbackState);
+      return;
+    }
+
+    playButton.disabled = playing;
+    pauseButton.disabled = !playing;
+    readout.textContent = `${formatSeconds(playbackState.totalElapsed)} / ${formatSeconds(playbackState.totalDuration)} · Segment ${playbackState.currentSegmentIndex + 1} · ${playbackState.currentSegmentPhase}`;
+  };
+
+  const syncVisualizerCanvas = (): void => {
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-role="visualizer-canvas"]');
+    if (!canvas) {
+      return;
+    }
+
+    const module = getVisualizerModule(activeVisualizerId);
+    module.renderFrame({
+      canvas,
+      engineState,
+      playbackState: activePlaybackState(),
+      durationSeconds: envelopeDurationSeconds,
+    });
+  };
+
   const syncTimelinePlaybackVisuals = (): void => {
     const canvas = root.querySelector<HTMLElement>('[data-role="timeline-canvas"]');
     if (!canvas) {
@@ -4113,7 +4234,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     const playbackProgress =
-      playbackMode === 'timeline'
+      playbackMode !== 'analysis'
         ? timelineIsPlaying()
           ? ((activePlaybackState().totalElapsed % envelopeDurationSeconds) /
               envelopeDurationSeconds)
@@ -4125,8 +4246,8 @@ export function createApp(root: HTMLElement): void {
     drawEnvelope(canvas, envelopeSamples, playbackProgress);
 
     if (
-      (playbackMode === 'timeline' && timelineIsPlaying()) ||
-      (playbackMode === 'manual' && engineState.playbackState === 'running')
+      (playbackMode !== 'analysis' && timelineIsPlaying()) ||
+      (playbackMode === 'analysis' && engineState.playbackState === 'running')
     ) {
       animationFrameId = window.requestAnimationFrame(drawEnvelopeFrame);
     } else {
@@ -4196,8 +4317,8 @@ export function createApp(root: HTMLElement): void {
 
       drawEnvelope(envelopeCanvas, envelopeSamples, -1);
       if (
-        (playbackMode === 'timeline' && timelineIsPlaying()) ||
-        (playbackMode === 'manual' && engineState.playbackState === 'running')
+        (playbackMode !== 'analysis' && timelineIsPlaying()) ||
+        (playbackMode === 'analysis' && engineState.playbackState === 'running')
       ) {
         animationFrameId = window.requestAnimationFrame(drawEnvelopeFrame);
       }
@@ -4207,7 +4328,14 @@ export function createApp(root: HTMLElement): void {
       const totalLayerGain = engineState.pairs.reduce((sum, pair) => sum + pair.gain, 0);
       metrics.innerHTML = [
         renderMetric('Session segments', String(session.segments.length)),
-        renderMetric('Mode', playbackMode === 'timeline' ? 'Timeline' : 'Manual'),
+        renderMetric(
+          'Mode',
+          playbackMode === 'timeline'
+            ? 'Timeline'
+            : playbackMode === 'visualizer'
+              ? 'Visualizer'
+              : 'Analysis',
+        ),
         renderMetric('Live layers', String(engineState.pairs.length)),
         renderMetric('Master mix', formatPercent(engineState.base.masterGain)),
         renderMetric(
@@ -4225,14 +4353,13 @@ export function createApp(root: HTMLElement): void {
     const shell = root.querySelector<HTMLElement>('.shell');
     if (shell) {
       shell.dataset.mode = playbackMode;
-      shell.dataset.timelineTab =
-        playbackMode === 'timeline' ? 'timeline' : 'manual';
+      shell.dataset.timelineTab = playbackMode;
     }
 
     headerShell.innerHTML =
-      playbackMode === 'timeline'
-        ? renderTimelineHeader(session, shareButtonLabel, playbackMode)
-        : renderManualHeader(session, shareButtonLabel, playbackMode);
+      playbackMode === 'analysis'
+        ? renderAnalysisHeader(session, shareButtonLabel)
+        : renderTimelineHeader(session, shareButtonLabel, playbackMode);
 
     workspaceShell.innerHTML =
       playbackMode === 'timeline'
@@ -4242,13 +4369,15 @@ export function createApp(root: HTMLElement): void {
             carrierDisplayMode,
             composerDraft,
           )
-        : renderManualWorkspace(
-            session,
-            timelineUI.selectedSegmentId,
-            carrierDisplayMode,
-            manualDiagnosticsTab,
-            manualDiagnosticsOpen,
-          );
+        : playbackMode === 'visualizer'
+          ? renderVisualizerWorkspace(activeVisualizerId)
+          : renderManualWorkspace(
+              session,
+              timelineUI.selectedSegmentId,
+              carrierDisplayMode,
+              manualDiagnosticsTab,
+              manualDiagnosticsOpen,
+            );
 
     syncHeader();
     syncComposerOutput();
@@ -4260,6 +4389,8 @@ export function createApp(root: HTMLElement): void {
     syncTimelineCanvas();
     syncAdvancedCanvas();
     syncTimelineTransport();
+    syncVisualizerTransport();
+    syncVisualizerCanvas();
     syncAdvancedInspector();
     syncDiagnostics();
   };
@@ -4273,6 +4404,8 @@ export function createApp(root: HTMLElement): void {
     syncTimelineCanvas();
     syncAdvancedCanvas();
     syncTimelineTransport();
+    syncVisualizerTransport();
+    syncVisualizerCanvas();
     syncGeneratedSummary();
     syncAdvancedInspector();
     syncDiagnostics();
@@ -4454,8 +4587,10 @@ export function createApp(root: HTMLElement): void {
     syncEngineSnapshot();
     syncHeader();
     syncTimelineTransport();
+    syncVisualizerTransport();
     syncTimelinePlaybackVisuals();
     syncAdvancedPlaybackVisuals();
+    syncVisualizerCanvas();
     syncDiagnostics();
   });
 
@@ -4463,12 +4598,14 @@ export function createApp(root: HTMLElement): void {
     syncTimelinePlaybackVisuals();
     syncAdvancedPlaybackVisuals();
     syncTimelineTransport();
+    syncVisualizerTransport();
+    syncVisualizerCanvas();
     syncHeader();
   });
 
   sequencer.load(session);
   ensureTimelineUI(undefined, session);
-  if (playbackMode === 'manual' && timelineUI.selectedSegmentId === null) {
+  if (playbackMode === 'analysis' && timelineUI.selectedSegmentId === null) {
     ensureTimelineUI({
       selectedSegmentId: session.segments[0]?.id ?? null,
       segmentLoopOnly: false,
@@ -4895,6 +5032,13 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
+    if (inputKey === 'visualizer-module' && target instanceof HTMLSelectElement) {
+      activeVisualizerId = target.value;
+      syncVisualizerCanvas();
+      persistAppState();
+      return;
+    }
+
     if (inputKey === 'composer-intent') {
       readComposerDraftFromDom();
       persistAppState();
@@ -5117,9 +5261,7 @@ export function createApp(root: HTMLElement): void {
         return;
       }
 
-      if (playbackMode === 'timeline') {
-        await sequencer.stop();
-      } else if (engineState.playbackState === 'running') {
+      if (playbackMode === 'analysis' && engineState.playbackState === 'running') {
         await stopManual();
       }
 
@@ -5134,14 +5276,48 @@ export function createApp(root: HTMLElement): void {
         );
       } else {
         ensureTimelineUI({
-          selectedSegmentId: timelineUI.selectedSegmentId ?? session.segments[0]?.id ?? null,
-          segmentLoopOnly: false,
+          composerModalOpen: false,
         });
-        manualDiagnosticsOpen = false;
       }
       syncSequencerPlaybackTarget();
       revealedChipActionsSegmentId = null;
       pendingRemoveSegmentId = null;
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (action === 'enter-analysis-mode') {
+      const selected = selectedSegmentOrNull();
+      if (!selected) {
+        return;
+      }
+      await sequencer.stop();
+      playbackMode = 'analysis';
+      ensureTimelineUI({
+        selectedSegmentId: selected.id,
+        segmentLoopOnly: false,
+      });
+      manualDiagnosticsOpen = false;
+      syncSequencerPlaybackTarget();
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (action === 'return-to-timeline') {
+      if (engineState.playbackState === 'running') {
+        await stopManual();
+      }
+      playbackMode = 'timeline';
+      ensureTimelineUI(
+        {
+          tab: 'timeline',
+          composerModalOpen: false,
+        },
+        session,
+      );
+      syncSequencerPlaybackTarget();
       renderLayout();
       persistAppState();
       return;
@@ -5239,6 +5415,27 @@ export function createApp(root: HTMLElement): void {
       clearTimelineDragState();
       syncSequencerPlaybackTarget();
       await sequencer.play();
+      syncEngineSnapshot();
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (action === 'visualizer-play') {
+      syncSequencerPlaybackTarget();
+      if (activePlaybackState().status === 'paused') {
+        await sequencer.resume();
+      } else {
+        await sequencer.play();
+      }
+      syncEngineSnapshot();
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (action === 'visualizer-pause') {
+      await sequencer.pause();
       syncEngineSnapshot();
       renderLayout();
       persistAppState();
