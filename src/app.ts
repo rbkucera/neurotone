@@ -4225,20 +4225,6 @@ export function createApp(root: HTMLElement): void {
     playButton.disabled = playing;
     pauseButton.disabled = !playing;
     readout.textContent = `${formatSeconds(playbackState.totalElapsed)} / ${formatSeconds(playbackState.totalDuration)} · Segment ${playbackState.currentSegmentIndex + 1} · ${playbackState.currentSegmentPhase}`;
-
-    const state = selectedSegmentRequired().state;
-    const masterRange = root.querySelector<HTMLInputElement>(
-      '.panel--workspace-visualizer input[type="range"][data-input="masterGain"]',
-    );
-    const masterOutput = root.querySelector<HTMLOutputElement>(
-      '.panel--workspace-visualizer [data-role="master-output"]',
-    );
-    if (masterRange) {
-      masterRange.value = String(state.masterGain);
-    }
-    if (masterOutput) {
-      masterOutput.value = formatPercent(state.masterGain);
-    }
   };
 
   const syncVisualizerBandLeds = (): void => {
@@ -5596,16 +5582,21 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (inputKey === 'masterGain') {
+      const gainValue = Number((target as HTMLInputElement).value);
       updateSelectedSegment(
         (segment) => ({
           ...segment,
           state: sanitizeSessionSoundState({
             ...segment.state,
-            masterGain: Number((target as HTMLInputElement).value),
+            masterGain: gainValue,
           }),
         }),
         false,
       );
+      const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="master-output"]');
+      if (output) {
+        output.value = formatPercent(gainValue);
+      }
       return;
     }
 
