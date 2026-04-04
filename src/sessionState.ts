@@ -531,7 +531,7 @@ export function createInitialShareableState(): ShareableState {
   const session = createDefaultSession();
 
   return normalizeShareableState({
-    mode: 'timeline',
+    mode: 'visualizer',
     session,
   });
 }
