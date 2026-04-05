@@ -2161,6 +2161,9 @@ function renderAnalysisHeader(
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
+      <button class="tool-header__share" data-action="share-link" type="button">
+        <span data-role="share-label">${shareButtonLabel}</span>
+      </button>
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
@@ -2172,10 +2175,6 @@ function renderAnalysisHeader(
 
             ${renderHeaderVolumeSlider(masterVolume)}
           </div>
-
-          <button class="tool-header__share" data-action="share-link" type="button">
-            <span data-role="share-label">${shareButtonLabel}</span>
-          </button>
         </div>
       </div>
       <div data-role="headphone-notice"></div>
@@ -2192,6 +2191,9 @@ function renderTimelineHeader(
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
+      <button class="tool-header__share" data-action="share-link" type="button">
+        <span data-role="share-label">${shareButtonLabel}</span>
+      </button>
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
@@ -2203,10 +2205,6 @@ function renderTimelineHeader(
 
             ${renderHeaderVolumeSlider(masterVolume)}
           </div>
-
-          <button class="tool-header__share" data-action="share-link" type="button">
-            <span data-role="share-label">${shareButtonLabel}</span>
-          </button>
         </div>
       </div>
       <div data-role="headphone-notice"></div>

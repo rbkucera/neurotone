@@ -766,8 +766,9 @@ input[type="range"] {
 
 .tool-header__share {
   position: absolute;
+  z-index: 2;
   top: 4px;
-  right: 6px;
+  right: 8px;
   padding: 4px 8px;
   border: 0;
   background: none;
