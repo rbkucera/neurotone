@@ -2140,11 +2140,7 @@ function renderManualDiagnosticsMarkup(
 
 function renderHeaderVolumeSlider(masterVolume: number): string {
   return `
-    <label class="control tool-header__volume">
-      <span class="control__row">
-        <span>Volume</span>
-        <output data-role="master-output">${formatPercent(masterVolume)}</output>
-      </span>
+    <label class="tool-header__volume">
       <input
         data-input="masterVolume"
         type="range"
@@ -2153,6 +2149,7 @@ function renderHeaderVolumeSlider(masterVolume: number): string {
         step="0.01"
         value="${masterVolume}"
       />
+      <output data-role="master-output">${formatPercent(masterVolume)}</output>
     </label>
   `;
 }
@@ -2166,10 +2163,7 @@ function renderAnalysisHeader(
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
-          <div class="tool-header__session">
-            <p class="eyebrow">Analysis mode</p>
-            <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-          </div>
+          <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
 
           <div class="tool-header__controls">
             <button class="transport transport--compact" data-action="return-to-timeline" type="button">
@@ -2177,11 +2171,11 @@ function renderAnalysisHeader(
             </button>
 
             ${renderHeaderVolumeSlider(masterVolume)}
-
-            <button class="ghost-button tool-header__share" data-action="share-link" type="button">
-              <span data-role="share-label">${shareButtonLabel}</span>
-            </button>
           </div>
+
+          <button class="tool-header__share" data-action="share-link" type="button">
+            <span data-role="share-label">${shareButtonLabel}</span>
+          </button>
         </div>
       </div>
       <div data-role="headphone-notice"></div>
@@ -2196,17 +2190,11 @@ function renderTimelineHeader(
   playbackMode: PlaybackMode,
   masterVolume: number,
 ): string {
-  const title =
-    playbackMode === 'visualizer' ? 'Visualizer studio' : 'Timeline studio';
-
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
-          <div class="tool-header__session">
-            <p class="eyebrow">${title}</p>
-            <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-          </div>
+          <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
 
           <div class="tool-header__controls">
             <label class="tool-header__mode">
@@ -2214,11 +2202,11 @@ function renderTimelineHeader(
             </label>
 
             ${renderHeaderVolumeSlider(masterVolume)}
-
-            <button class="ghost-button tool-header__share" data-action="share-link" type="button">
-              <span data-role="share-label">${shareButtonLabel}</span>
-            </button>
           </div>
+
+          <button class="tool-header__share" data-action="share-link" type="button">
+            <span data-role="share-label">${shareButtonLabel}</span>
+          </button>
         </div>
       </div>
       <div data-role="headphone-notice"></div>
