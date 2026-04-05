@@ -1,0 +1,71 @@
+{
+  "label": "Soft Arrival",
+  "loop": true,
+  "segments": [
+    {
+      "label": "Segment 1",
+      "holdDuration": 60,
+      "transitionDuration": 0,
+      "state": {
+        "pairs": [
+          {
+            "id": "soft-arrival-a",
+            "carrierHz": 195.99771799087463,
+            "beatHz": 1,
+            "gain": 0.4
+          },
+          {
+            "id": "soft-arrival-b",
+            "carrierHz": 96,
+            "beatHz": 1,
+            "gain": 0.36
+          }
+        ],
+        "gain": 0.1,
+        "noise": {
+          "enabled": true,
+          "volume": 0.26,
+          "model": "surf"
+        }
+      },
+      "overrides": [
+        {
+          "id": "soft-arrival-beat-a",
+          "label": "Beat (Layer 1)",
+          "target": "pair:soft-arrival-a.beatHz",
+          "interpolation": "linear",
+          "enabled": true,
+          "keyframes": [
+            { "id": "soft-arrival-beat-a-1", "time": 0, "value": 1 },
+            { "id": "soft-arrival-beat-a-2", "time": 29.6, "value": 40 },
+            { "id": "soft-arrival-beat-a-3", "time": 60, "value": 1 }
+          ]
+        },
+        {
+          "id": "soft-arrival-beat-b",
+          "label": "Beat (Layer 2)",
+          "target": "pair:soft-arrival-b.beatHz",
+          "interpolation": "linear",
+          "enabled": true,
+          "keyframes": [
+            { "id": "soft-arrival-beat-b-1", "time": 0, "value": 3 },
+            { "id": "soft-arrival-beat-b-2", "time": 29.7, "value": 1 },
+            { "id": "soft-arrival-beat-b-3", "time": 60, "value": 2.8 }
+          ]
+        },
+        {
+          "id": "soft-arrival-carrier-b",
+          "label": "Carrier (Layer 2)",
+          "target": "pair:soft-arrival-b.carrierHz",
+          "interpolation": "linear",
+          "enabled": true,
+          "keyframes": [
+            { "id": "soft-arrival-carrier-b-1", "time": 1.6, "value": 41.20344461410875 },
+            { "id": "soft-arrival-carrier-b-2", "time": 29.5, "value": 73.41619197935188 },
+            { "id": "soft-arrival-carrier-b-3", "time": 57, "value": 41.20344461410875 }
+          ]
+        }
+      ]
+    }
+  ]
+}
