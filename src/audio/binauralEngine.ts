@@ -518,6 +518,14 @@ export class BinauralEngine {
     return this.getSnapshot();
   }
 
+  setMasterGain(value: number): void {
+    this.base = {
+      ...this.base,
+      masterGain: clamp(value, LIMITS.gainMin, LIMITS.gainMax),
+    };
+    this.syncMasterGain();
+  }
+
   setBaseParams(params: Partial<BaseParams>): EngineSnapshot {
     const masterGain = clamp(
       params.masterGain ?? this.base.masterGain,

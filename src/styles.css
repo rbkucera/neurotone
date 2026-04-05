@@ -700,6 +700,20 @@ input[type="range"] {
   justify-content: flex-end;
 }
 
+.tool-header__volume {
+  min-width: 150px;
+  max-width: 190px;
+  gap: 4px;
+}
+
+.tool-header__volume output {
+  color: var(--text-soft);
+}
+
+.tool-header__volume input[type='range'] {
+  margin: 0;
+}
+
 .tool-header--timeline {
   width: 100%;
   align-items: center;
@@ -3101,6 +3115,7 @@ body.modal-open {
     flex-wrap: wrap;
   }
 
+  .tool-header__volume,
   .visualizer-surface__intensity,
   .visualizer-surface__select {
     min-width: 100%;

@@ -86,7 +86,9 @@ export class SessionSequencer {
     this.masterVolume = Math.min(1, Math.max(0, value));
     if (this.playbackState.status === 'playing' || this.playbackState.status === 'paused') {
       const moment = this.resolveMoment(this.playbackState.totalElapsed);
-      this.applySoundState(moment.soundState);
+      if (moment.soundState) {
+        this.engine.setMasterGain(moment.soundState.gain * this.masterVolume);
+      }
     }
   }
 

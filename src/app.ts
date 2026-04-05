@@ -2138,9 +2138,29 @@ function renderManualDiagnosticsMarkup(
   `;
 }
 
+function renderHeaderVolumeSlider(masterVolume: number): string {
+  return `
+    <label class="control tool-header__volume">
+      <span class="control__row">
+        <span>Volume</span>
+        <output data-role="master-output">${formatPercent(masterVolume)}</output>
+      </span>
+      <input
+        data-input="masterVolume"
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value="${masterVolume}"
+      />
+    </label>
+  `;
+}
+
 function renderAnalysisHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
+  masterVolume: number,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
@@ -2156,6 +2176,8 @@ function renderAnalysisHeader(
               Return to timeline
             </button>
 
+            ${renderHeaderVolumeSlider(masterVolume)}
+
             <button class="ghost-button tool-header__share" data-action="share-link" type="button">
               <span data-role="share-label">${shareButtonLabel}</span>
             </button>
@@ -2163,6 +2185,7 @@ function renderAnalysisHeader(
         </div>
       </div>
       <div data-role="headphone-notice"></div>
+      <div data-role="high-volume-warning"></div>
     </section>
   `;
 }
@@ -2171,6 +2194,7 @@ function renderTimelineHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
   playbackMode: PlaybackMode,
+  masterVolume: number,
 ): string {
   const title =
     playbackMode === 'visualizer' ? 'Visualizer studio' : 'Timeline studio';
@@ -2189,6 +2213,8 @@ function renderTimelineHeader(
               ${renderPlaybackModeToggle(playbackMode)}
             </label>
 
+            ${renderHeaderVolumeSlider(masterVolume)}
+
             <button class="ghost-button tool-header__share" data-action="share-link" type="button">
               <span data-role="share-label">${shareButtonLabel}</span>
             </button>
@@ -2196,6 +2222,7 @@ function renderTimelineHeader(
         </div>
       </div>
       <div data-role="headphone-notice"></div>
+      <div data-role="high-volume-warning"></div>
     </section>
   `;
 }
@@ -3104,15 +3131,12 @@ function renderVisualizerBandLeds(
 
 function renderVisualizerWorkspace(
   visualizerId: string,
-  masterVolume: number,
   bandActivity: VisualizerBandActivity,
 ): string {
 
   return `
     <section class="panel panel--workspace panel--workspace-visualizer">
       <section class="transport-row" data-role="visualizer-transport"></section>
-
-      <div data-role="high-volume-warning"></div>
 
       <section class="panel--embedded panel--visualizer-surface">
         <div class="visualizer-surface__header">
@@ -3140,21 +3164,6 @@ function renderVisualizerWorkspace(
                   `,
                 ).join('')}
               </select>
-            </label>
-
-            <label class="control visualizer-surface__intensity">
-              <span class="control__row">
-                <span>Volume</span>
-                <output data-role="master-output">${formatPercent(masterVolume)}</output>
-              </span>
-              <input
-                data-input="masterVolume"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value="${masterVolume}"
-              />
             </label>
           </div>
         </div>
@@ -5129,8 +5138,8 @@ export function createApp(root: HTMLElement): void {
 
     headerShell.innerHTML =
       playbackMode === 'analysis'
-        ? renderAnalysisHeader(session, shareButtonLabel)
-        : renderTimelineHeader(session, shareButtonLabel, playbackMode);
+        ? renderAnalysisHeader(session, shareButtonLabel, masterVolume)
+        : renderTimelineHeader(session, shareButtonLabel, playbackMode, masterVolume);
 
     workspaceShell.innerHTML =
       playbackMode === 'timeline'
@@ -5143,7 +5152,6 @@ export function createApp(root: HTMLElement): void {
         : playbackMode === 'visualizer'
           ? renderVisualizerWorkspace(
               activeVisualizerId,
-              masterVolume,
               visualizerBandActivity,
             )
           : renderManualWorkspace(
