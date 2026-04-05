@@ -85,7 +85,7 @@ interface CompactShareStateV5 {
 }
 
 const DEFAULTS = {
-  sessionLabel: 'Untitled session',
+  sessionLabel: 'New Session',
   segmentLabel: 'Segment',
   holdDuration: 12,
   transitionDuration: 4,
@@ -99,10 +99,10 @@ const DEFAULTS = {
 
 function createDefaultComposerDraft(): ComposerDraft {
   return {
-    label: 'Generated session',
-    source: 'Am Fmaj7 C G',
-    stepDuration: 8,
-    intent: 'alpha',
+    label: 'Composed Session',
+    source: 'Am Fmaj7/2 C G',
+    stepDuration: 16,
+    intent: 'mixed',
   };
 }
 
