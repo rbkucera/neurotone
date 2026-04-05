@@ -15,7 +15,7 @@ describe('sequencer utils', () => {
   it('interpolates matching and removed pairs cleanly', () => {
     const from = {
       pairs: [sanitizeTonePair({ id: 'a', carrierHz: 200, beatHz: 10, gain: 0.8 })],
-      masterGain: 0.2,
+      gain: 0.2,
       noise: {
         enabled: false,
         volume: 0.04,
@@ -24,7 +24,7 @@ describe('sequencer utils', () => {
     };
     const to = {
       pairs: [sanitizeTonePair({ id: 'b', carrierHz: 300, beatHz: 6, gain: 0.5 })],
-      masterGain: 0.25,
+      gain: 0.25,
       noise: {
         enabled: true,
         volume: 0.05,
@@ -35,14 +35,14 @@ describe('sequencer utils', () => {
     const result = interpolateSoundStates(from, to, 0.5);
 
     expect(result.pairs).toHaveLength(2);
-    expect(result.masterGain).toBeCloseTo(0.225, 6);
+    expect(result.gain).toBeCloseTo(0.225, 6);
   });
 
   it('applies segment override lane values against local segment time', () => {
     const state = applySegmentOverrides(
       {
         pairs: [sanitizeTonePair({ id: 'a', carrierHz: 200, beatHz: 10, gain: 0.8 })],
-        masterGain: 0.2,
+        gain: 0.2,
         noise: {
           enabled: true,
           volume: 0.05,
@@ -53,7 +53,7 @@ describe('sequencer utils', () => {
         {
           id: 'lane-1',
           label: 'Master',
-          target: 'masterGain',
+          target: 'gain',
           interpolation: 'linear',
           enabled: true,
           keyframes: [
@@ -65,7 +65,7 @@ describe('sequencer utils', () => {
       5,
     );
 
-    expect(state.masterGain).toBeCloseTo(0.3, 6);
+    expect(state.gain).toBeCloseTo(0.3, 6);
   });
 
   it('resolves session moments using the active segment overrides', () => {
@@ -77,7 +77,7 @@ describe('sequencer utils', () => {
           transitionDuration: 0,
           state: {
             pairs: [sanitizeTonePair({ id: 'a', carrierHz: 200, beatHz: 10, gain: 0.8 })],
-            masterGain: 0.2,
+            gain: 0.2,
             noise: {
               enabled: true,
               volume: 0.05,
@@ -92,7 +92,7 @@ describe('sequencer utils', () => {
           transitionDuration: 2,
           state: {
             pairs: [sanitizeTonePair({ id: 'a', carrierHz: 240, beatHz: 8, gain: 0.8 })],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: true,
               volume: 0.05,
@@ -103,7 +103,7 @@ describe('sequencer utils', () => {
             {
               id: 'segment-two-master',
               label: 'Master volume',
-              target: 'masterGain',
+              target: 'gain',
               interpolation: 'linear',
               enabled: true,
               keyframes: [
@@ -120,8 +120,8 @@ describe('sequencer utils', () => {
 
     expect(moment.playbackState.status).toBe('playing');
     expect(moment.playbackState.currentSegmentIndex).toBe(1);
-    expect(moment.soundState.masterGain).toBeGreaterThan(0.1);
-    expect(moment.soundState.masterGain).toBeLessThan(0.34);
+    expect(moment.soundState.gain).toBeGreaterThan(0.1);
+    expect(moment.soundState.gain).toBeLessThan(0.34);
   });
 
   it('treats exact segment boundaries as the start of the next segment', () => {
@@ -156,7 +156,7 @@ describe('sequencer utils', () => {
           createSessionSegment({
             state: {
               pairs: [sanitizeTonePair({ id: 'a', carrierHz: 200, beatHz: 10, gain: 0.8 })],
-              masterGain: 0.2,
+              gain: 0.2,
               noise: {
                 enabled: true,
                 volume: 0.05,
@@ -170,7 +170,7 @@ describe('sequencer utils', () => {
           {
             id: 'legacy-lane',
             label: 'Legacy',
-            target: 'masterGain',
+            target: 'gain',
             interpolation: 'linear',
             enabled: true,
             source: 'custom',
@@ -193,7 +193,7 @@ describe('sequencer utils', () => {
           transitionDuration: 3,
           state: {
             pairs: [sanitizeTonePair({ id: 'a', carrierHz: 180, beatHz: 8, gain: 0.7 })],
-            masterGain: 0.12,
+            gain: 0.12,
             noise: { enabled: false, volume: 0.03, model: 'soft' },
           },
           overrides: [],
@@ -204,7 +204,7 @@ describe('sequencer utils', () => {
           transitionDuration: 2,
           state: {
             pairs: [sanitizeTonePair({ id: 'a', carrierHz: 260, beatHz: 10, gain: 0.7 })],
-            masterGain: 0.42,
+            gain: 0.42,
             noise: { enabled: true, volume: 0.08, model: 'brown' },
           },
           overrides: [],
@@ -218,8 +218,8 @@ describe('sequencer utils', () => {
     expect(moment.playbackState.currentSegmentIndex).toBe(0);
     expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
     expect(moment.playbackState.elapsedInPhase).toBeCloseTo(1.5, 6);
-    expect(moment.soundState.masterGain).toBeGreaterThan(0.12);
-    expect(moment.soundState.masterGain).toBeLessThan(0.42);
+    expect(moment.soundState.gain).toBeGreaterThan(0.12);
+    expect(moment.soundState.gain).toBeLessThan(0.42);
   });
 
   it('samples segment one overrides with local transition time during loop wrap', () => {
@@ -232,14 +232,14 @@ describe('sequencer utils', () => {
           transitionDuration: 3,
           state: {
             pairs: [sanitizeTonePair({ id: 'a', carrierHz: 180, beatHz: 8, gain: 0.7 })],
-            masterGain: 0.12,
+            gain: 0.12,
             noise: { enabled: false, volume: 0.03, model: 'soft' },
           },
           overrides: [
             {
               id: 'first-master',
               label: 'Master',
-              target: 'masterGain',
+              target: 'gain',
               interpolation: 'linear',
               enabled: true,
               keyframes: [
@@ -255,7 +255,7 @@ describe('sequencer utils', () => {
           transitionDuration: 2,
           state: {
             pairs: [sanitizeTonePair({ id: 'a', carrierHz: 260, beatHz: 10, gain: 0.7 })],
-            masterGain: 0.42,
+            gain: 0.42,
             noise: { enabled: true, volume: 0.08, model: 'brown' },
           },
           overrides: [],
@@ -268,7 +268,7 @@ describe('sequencer utils', () => {
 
     expect(moment.playbackState.currentSegmentIndex).toBe(0);
     expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
-    expect(moment.soundState.masterGain).toBeCloseTo(0.5, 6);
+    expect(moment.soundState.gain).toBeCloseTo(0.5, 6);
   });
 
   it('does not force wrap transition when first segment transition is zero', () => {

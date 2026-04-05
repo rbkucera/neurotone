@@ -518,6 +518,24 @@ export class BinauralEngine {
     return this.getSnapshot();
   }
 
+  setMasterGain(value: number): void {
+    this.base = {
+      ...this.base,
+      masterGain: clamp(value, LIMITS.gainMin, LIMITS.gainMax),
+    };
+
+    if (!this.context || !this.masterGainNode) {
+      return;
+    }
+
+    const pairGainSum = this.base.pairs.reduce(
+      (sum, pair) => sum + pair.gain,
+      0,
+    );
+    const headroom = Math.max(1, pairGainSum);
+    this.masterGainNode.gain.value = this.base.masterGain / headroom;
+  }
+
   setBaseParams(params: Partial<BaseParams>): EngineSnapshot {
     const masterGain = clamp(
       params.masterGain ?? this.base.masterGain,
@@ -611,6 +629,8 @@ export class BinauralEngine {
 
     const context = new AudioContext();
     const masterGainNode = context.createGain();
+    masterGainNode.channelCount = 2;
+    masterGainNode.channelCountMode = 'explicit';
     masterGainNode.gain.value = this.base.masterGain;
     masterGainNode.connect(context.destination);
 
@@ -624,7 +644,16 @@ export class BinauralEngine {
       return;
     }
 
-    rampParam(this.context, this.masterGainNode.gain, this.base.masterGain);
+    const pairGainSum = this.base.pairs.reduce(
+      (sum, pair) => sum + pair.gain,
+      0,
+    );
+    const headroom = Math.max(1, pairGainSum);
+    rampParam(
+      this.context,
+      this.masterGainNode.gain,
+      this.base.masterGain / headroom,
+    );
   }
 
   private syncNoise(rampSeconds = LIMITS.rampSeconds): void {
@@ -662,6 +691,9 @@ export class BinauralEngine {
     const rightOsc = this.context.createOscillator();
     const merger = this.context.createChannelMerger(2);
     const output = this.context.createGain();
+    output.channelCount = 2;
+    output.channelCountMode = 'explicit';
+    output.channelInterpretation = 'discrete';
     output.gain.value = 0;
 
     leftOsc.type = 'sine';

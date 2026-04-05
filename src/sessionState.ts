@@ -11,9 +11,12 @@ import {
   createSessionSegment,
   sanitizeSessionSoundState,
 } from './sequencer/utils';
+import defaultSessionData from './defaultSession.json';
 
 export const SESSION_STORAGE_KEY = 'neurotone.session.v4';
 export const HEADPHONE_NOTICE_KEY = 'neurotone.headphone-notice.v1';
+const MASTER_VOLUME_KEY = 'neurotone.master-volume.v1';
+const HIGH_VOLUME_WARNING_KEY = 'neurotone.high-volume-warning.v1';
 
 export type PlaybackMode = 'timeline' | 'visualizer';
 
@@ -82,14 +85,13 @@ interface CompactShareStateV5 {
 }
 
 const DEFAULTS = {
-  sessionLabel: 'Untitled session',
+  sessionLabel: 'New Session',
   segmentLabel: 'Segment',
   holdDuration: 12,
   transitionDuration: 4,
   carrierHz: 200,
   beatHz: 10,
   gain: 1,
-  masterGain: 0.22,
   noiseEnabled: false,
   noiseVolume: 0.06,
   noiseModel: 'soft' as NoiseModel,
@@ -97,97 +99,17 @@ const DEFAULTS = {
 
 function createDefaultComposerDraft(): ComposerDraft {
   return {
-    label: 'Generated session',
-    source: 'Am Fmaj7 C G',
-    stepDuration: 8,
-    intent: 'alpha',
+    label: 'Composed Session',
+    source: 'Am Fmaj7/2 C G',
+    stepDuration: 16,
+    intent: 'mixed',
   };
 }
 
 function createDefaultSession(): SessionDefinition {
-  return createSessionDefinition({
-    label: 'Soft Arrival',
-    loop: true,
-    segments: [
-      createSessionSegment({
-        label: 'Segment 1',
-        holdDuration: 60,
-        transitionDuration: 0,
-        state: sanitizeSessionSoundState({
-          pairs: [
-            {
-              id: 'soft-arrival-a',
-              carrierHz: 195.99771799087463,
-              beatHz: 1,
-              gain: 0.4,
-            },
-            {
-              id: 'soft-arrival-b',
-              carrierHz: 96,
-              beatHz: 1,
-              gain: 0.36,
-            },
-          ],
-          masterGain: 0.1,
-          noise: {
-            enabled: true,
-            volume: 0.26,
-            model: 'surf',
-          },
-        }),
-        overrides: [
-          {
-            id: 'soft-arrival-beat-a',
-            label: 'Beat (Layer 1)',
-            target: 'pair:soft-arrival-a.beatHz',
-            interpolation: 'linear',
-            enabled: true,
-            keyframes: [
-              { id: 'soft-arrival-beat-a-1', time: 0, value: 1 },
-              { id: 'soft-arrival-beat-a-2', time: 29.6, value: 40 },
-              { id: 'soft-arrival-beat-a-3', time: 60, value: 1 },
-            ],
-          },
-          {
-            id: 'soft-arrival-beat-b',
-            label: 'Beat (Layer 2)',
-            target: 'pair:soft-arrival-b.beatHz',
-            interpolation: 'linear',
-            enabled: true,
-            keyframes: [
-              { id: 'soft-arrival-beat-b-1', time: 0, value: 3 },
-              { id: 'soft-arrival-beat-b-2', time: 29.7, value: 1 },
-              { id: 'soft-arrival-beat-b-3', time: 60, value: 2.8 },
-            ],
-          },
-          {
-            id: 'soft-arrival-carrier-b',
-            label: 'Carrier (Layer 2)',
-            target: 'pair:soft-arrival-b.carrierHz',
-            interpolation: 'linear',
-            enabled: true,
-            keyframes: [
-              {
-                id: 'soft-arrival-carrier-b-1',
-                time: 1.6,
-                value: 41.20344461410875,
-              },
-              {
-                id: 'soft-arrival-carrier-b-2',
-                time: 29.5,
-                value: 73.41619197935188,
-              },
-              {
-                id: 'soft-arrival-carrier-b-3',
-                time: 57,
-                value: 41.20344461410875,
-              },
-            ],
-          },
-        ],
-      }),
-    ],
-  });
+  return createSessionDefinition(
+    defaultSessionData as Partial<SessionDefinition>,
+  );
 }
 
 export function normalizeShareableState(
@@ -232,7 +154,7 @@ export function stateFromSnapshot(
           transitionDuration: 0,
           state: sanitizeSessionSoundState({
             pairs: snapshot.base.pairs,
-            masterGain: snapshot.base.masterGain,
+            gain: snapshot.base.masterGain,
             noise: snapshot.noise,
           }),
         }),
@@ -310,8 +232,8 @@ function compactShareStateV5(state: ShareableState): CompactShareStateV5 {
               g: pair.gain !== DEFAULTS.gain ? pair.gain : undefined,
             })),
             m:
-              segment.state.masterGain !== DEFAULTS.masterGain
-                ? segment.state.masterGain
+              segment.state.gain !== DEFAULTS.gain
+                ? segment.state.gain
                 : undefined,
             n: compactNoiseV5(
               segment.state.noise.enabled,
@@ -370,14 +292,14 @@ function expandCompactShareStateV5(
               beatHz: pair.b ?? DEFAULTS.beatHz,
               gain: pair.g ?? DEFAULTS.gain,
             })) ?? [],
-          masterGain: segment.s?.m ?? DEFAULTS.masterGain,
+          gain: segment.s?.m ?? DEFAULTS.gain,
           noise: expandNoiseV5(segment.s?.n),
         },
         overrides:
           segment.o?.map((lane, laneIndex) => ({
             id: `override-${segmentIndex}-${laneIndex}`,
             label: lane.t,
-            target: lane.t,
+            target: (lane.t as string) === 'masterGain' ? 'gain' : lane.t,
             interpolation: lane.p === 's' ? 'step' : 'linear',
             enabled: lane.e === 0 ? false : true,
             keyframes:
@@ -522,6 +444,45 @@ export function hasSeenHeadphoneNotice(): boolean {
 export function markHeadphoneNoticeSeen(): void {
   try {
     window.localStorage.setItem(HEADPHONE_NOTICE_KEY, '1');
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
+}
+
+export function hasSeenHighVolumeWarning(): boolean {
+  try {
+    return window.localStorage.getItem(HIGH_VOLUME_WARNING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markHighVolumeWarningSeen(): void {
+  try {
+    window.localStorage.setItem(HIGH_VOLUME_WARNING_KEY, '1');
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
+}
+
+export function loadMasterVolume(): number {
+  try {
+    const raw = window.localStorage.getItem(MASTER_VOLUME_KEY);
+    if (raw !== null) {
+      const value = Number(raw);
+      if (Number.isFinite(value)) {
+        return Math.min(1, Math.max(0, value));
+      }
+    }
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
+  return 0.22;
+}
+
+export function saveMasterVolume(value: number): void {
+  try {
+    window.localStorage.setItem(MASTER_VOLUME_KEY, String(value));
   } catch {
     // Fails silently for blocked storage or quota issues.
   }

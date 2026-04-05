@@ -52,9 +52,13 @@ import {
   decodeShareableState,
   encodeShareableState,
   hasSeenHeadphoneNotice,
+  hasSeenHighVolumeWarning,
+  loadMasterVolume,
   loadStoredStateViewHint,
   loadStoredState,
   markHeadphoneNoticeSeen,
+  markHighVolumeWarningSeen,
+  saveMasterVolume,
   saveStoredState,
   type ComposerDraft,
   type PlaybackMode,
@@ -115,6 +119,9 @@ const TIMELINE_CHIP_ACTIONS = {
   confirmInlineMinWidthPx: 204,
   overlayMinWidthPx: 124,
 };
+
+const TIMELINE_COLLAPSED_THRESHOLD_PX = 48;
+const TIMELINE_COLLAPSED_WIDTH_PX = 36;
 
 const TIMELINE_ZOOM = {
   min: 0.1,
@@ -748,7 +755,7 @@ function renderPairCard(
   `;
 }
 
-function renderSupportControls(noise: NoiseConfig, masterGain: number): string {
+function renderSupportControls(noise: NoiseConfig, segmentGain: number): string {
   return `
     <section class="support-compact">
       <label class="toggle support-compact__toggle">
@@ -782,16 +789,16 @@ function renderSupportControls(noise: NoiseConfig, masterGain: number): string {
 
       <label class="control">
         <div class="control__row">
-          <span>Master volume</span>
-          <output data-role="master-output">${formatPercent(masterGain)}</output>
+          <span>Segment gain</span>
+          <output data-role="segment-gain-output">${formatPercent(segmentGain)}</output>
         </div>
         <input
-          data-input="masterGain"
+          data-input="segmentGain"
           type="range"
           min="0"
-          max="0.45"
+          max="1"
           step="0.01"
-          value="${masterGain}"
+          value="${segmentGain}"
         />
       </label>
     </section>
@@ -799,8 +806,8 @@ function renderSupportControls(noise: NoiseConfig, masterGain: number): string {
 }
 
 function describeAutomationTarget(target: AutomationTarget): string {
-  if (target === 'masterGain') {
-    return 'Master volume';
+  if (target === 'gain') {
+    return 'Segment gain';
   }
   if (target === 'noise.volume') {
     return 'Noise level';
@@ -834,7 +841,7 @@ function collectAutomationTargets(session: SessionDefinition): AutomationTarget[
   });
 
   return [
-    'masterGain',
+    'gain',
     'noise.volume',
     'noise.enabled',
     'noise.model',
@@ -888,8 +895,8 @@ function overrideValueControl(target: AutomationTarget): OverrideValueControl {
     return { kind: 'enum' };
   }
 
-  if (target === 'masterGain') {
-    return { kind: 'numeric', min: 0, max: 0.45, step: 0.01 };
+  if (target === 'gain') {
+    return { kind: 'numeric', min: 0, max: 1, step: 0.01 };
   }
 
   if (target === 'noise.volume') {
@@ -977,7 +984,7 @@ function renderKeyframeValueInput(
   }
 
   const step =
-    lane.target === 'masterGain' || lane.target === 'noise.volume'
+    lane.target === 'gain' || lane.target === 'noise.volume'
       ? '0.01'
       : lane.target.endsWith('.gain')
         ? '0.01'
@@ -1078,8 +1085,8 @@ function renderLaneCards(session: SessionDefinition): string {
 }
 
 function shortAutomationTargetLabel(target: AutomationTarget): string {
-  if (target === 'masterGain') {
-    return 'Master';
+  if (target === 'gain') {
+    return 'Gain';
   }
   if (target === 'noise.volume') {
     return 'Noise';
@@ -1114,6 +1121,7 @@ interface TimelineClipModel {
   window: SegmentWindow;
   left: number;
   width: number;
+  collapsed: boolean;
 }
 
 interface TimelineViewportTick {
@@ -1155,10 +1163,12 @@ function buildTimelineViewportModel(
   const nextPixelsPerSecond = pixelsPerSecond(zoomLevel);
 
   const clips = windows.map((window) => {
+    const trueWidth = Math.max(1, segmentSpanDuration(window) * nextPixelsPerSecond);
     const clip: TimelineClipModel = {
       window,
       left: window.transitionStart * nextPixelsPerSecond,
-      width: Math.max(1, segmentSpanDuration(window) * nextPixelsPerSecond),
+      width: trueWidth,
+      collapsed: trueWidth < TIMELINE_COLLAPSED_THRESHOLD_PX,
     };
     return clip;
   });
@@ -1481,6 +1491,36 @@ function renderTimelineViewport(
               const hasInlineActions =
                 clip.width >= inlineActionsThreshold;
 
+              if (clip.collapsed) {
+                const midpoint = clip.left + clip.width / 2;
+                const collapsedLeft = midpoint - TIMELINE_COLLAPSED_WIDTH_PX / 2;
+                const clipTitle = `${escapeHtml(segment.label || `Segment ${index + 1}`)} · ${formatSeconds(segmentSpanDuration(clip.window))}`;
+
+                return `
+                  <article
+                    class="timeline-clip timeline-clip--collapsed ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''}"
+                    data-clip-id="${segment.id}"
+                    style="left:${collapsedLeft}px;width:${TIMELINE_COLLAPSED_WIDTH_PX}px"
+                    title="${clipTitle}"
+                  >
+                    <button
+                      class="timeline-clip__button"
+                      data-action="select-segment"
+                      data-segment-id="${segment.id}"
+                      type="button"
+                      draggable="${dragEnabled ? 'true' : 'false'}"
+                      aria-label="${clipTitle}"
+                    >
+                      <span
+                        class="timeline-clip__selected-led ${isSelected ? 'is-on' : ''}"
+                        aria-hidden="true"
+                      ></span>
+                      <span class="timeline-clip__index">${index + 1}</span>
+                    </button>
+                  </article>
+                `;
+              }
+
               return `
                 <article
                   class="timeline-clip ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''} ${isRevealed ? 'is-revealed' : ''}"
@@ -1569,7 +1609,7 @@ function formatAutomationValue(
   }
 
   if (
-    (target === 'masterGain' || target === 'noise.volume' || target.endsWith('.gain')) &&
+    (target === 'gain' || target === 'noise.volume' || target.endsWith('.gain')) &&
     typeof value === 'number'
   ) {
     return formatPercent(value);
@@ -2098,31 +2138,47 @@ function renderManualDiagnosticsMarkup(
   `;
 }
 
+function renderHeaderVolumeSlider(masterVolume: number): string {
+  return `
+    <label class="tool-header__volume">
+      <input
+        data-input="masterVolume"
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value="${masterVolume}"
+      />
+      <output data-role="master-output">${formatPercent(masterVolume)}</output>
+    </label>
+  `;
+}
+
 function renderAnalysisHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
+  masterVolume: number,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
+      <button class="tool-header__share" data-action="share-link" type="button">
+        <span data-role="share-label">${shareButtonLabel}</span>
+      </button>
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
-          <div class="tool-header__session">
-            <p class="eyebrow">Analysis mode</p>
-            <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-          </div>
+          <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
 
           <div class="tool-header__controls">
             <button class="transport transport--compact" data-action="return-to-timeline" type="button">
               Return to timeline
             </button>
 
-            <button class="ghost-button tool-header__share" data-action="share-link" type="button">
-              <span data-role="share-label">${shareButtonLabel}</span>
-            </button>
+            ${renderHeaderVolumeSlider(masterVolume)}
           </div>
         </div>
       </div>
       <div data-role="headphone-notice"></div>
+      <div data-role="high-volume-warning"></div>
     </section>
   `;
 }
@@ -2131,31 +2187,28 @@ function renderTimelineHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
   playbackMode: PlaybackMode,
+  masterVolume: number,
 ): string {
-  const title =
-    playbackMode === 'visualizer' ? 'Visualizer studio' : 'Timeline studio';
-
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
+      <button class="tool-header__share" data-action="share-link" type="button">
+        <span data-role="share-label">${shareButtonLabel}</span>
+      </button>
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
-          <div class="tool-header__session">
-            <p class="eyebrow">${title}</p>
-            <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-          </div>
+          <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
 
           <div class="tool-header__controls">
             <label class="tool-header__mode">
               ${renderPlaybackModeToggle(playbackMode)}
             </label>
 
-            <button class="ghost-button tool-header__share" data-action="share-link" type="button">
-              <span data-role="share-label">${shareButtonLabel}</span>
-            </button>
+            ${renderHeaderVolumeSlider(masterVolume)}
           </div>
         </div>
       </div>
       <div data-role="headphone-notice"></div>
+      <div data-role="high-volume-warning"></div>
     </section>
   `;
 }
@@ -2172,7 +2225,7 @@ function renderTimelineComposerModal(
   return `
     <div class="composer-modal" data-role="composer-modal">
       <div class="composer-modal__backdrop" data-action="close-composer-modal"></div>
-      <section class="composer-modal__dialog" data-action="composer-modal-surface" role="dialog" aria-modal="true" aria-label="Composer">
+      <section class="composer-modal__dialog" data-action="composer-modal-surface" role="dialog" aria-modal="true" aria-label="Composer" tabindex="-1">
         <div class="composer-modal__header">
           <div>
             <p class="layer-card__eyebrow">Compose</p>
@@ -2312,7 +2365,7 @@ function collectSegmentOverrideTargets(
   segment: SessionSegment,
 ): SegmentOverrideTarget[] {
   return [
-    'masterGain',
+    'gain',
     'noise.volume',
     'noise.enabled',
     'noise.model',
@@ -2328,8 +2381,8 @@ function describeSegmentOverrideTarget(
   segment: SessionSegment,
   target: SegmentOverrideTarget,
 ): string {
-  if (target === 'masterGain') {
-    return 'Master volume';
+  if (target === 'gain') {
+    return 'Segment gain';
   }
   if (target === 'noise.volume') {
     return 'Noise level';
@@ -2358,8 +2411,8 @@ function shortSegmentOverrideTargetLabel(
   segment: SessionSegment,
   target: SegmentOverrideTarget,
 ): string {
-  if (target === 'masterGain') {
-    return 'Master';
+  if (target === 'gain') {
+    return 'Gain';
   }
   if (target === 'noise.volume') {
     return 'Noise';
@@ -2548,8 +2601,8 @@ function segmentStartValueForOverrideTarget(
   segment: SessionSegment,
   target: SegmentOverrideTarget,
 ): number | boolean | NoiseModel {
-  if (target === 'masterGain') {
-    return normalizeKeyframeValue(target, segment.state.masterGain);
+  if (target === 'gain') {
+    return normalizeKeyframeValue(target, segment.state.gain);
   }
   if (target === 'noise.volume') {
     return normalizeKeyframeValue(target, segment.state.noise.volume);
@@ -3064,10 +3117,8 @@ function renderVisualizerBandLeds(
 
 function renderVisualizerWorkspace(
   visualizerId: string,
-  visualizerIntensity: number,
   bandActivity: VisualizerBandActivity,
 ): string {
-  const intensity = clampNumeric(visualizerIntensity, 0, 1);
 
   return `
     <section class="panel panel--workspace panel--workspace-visualizer">
@@ -3100,25 +3151,10 @@ function renderVisualizerWorkspace(
                 ).join('')}
               </select>
             </label>
-
-            <label class="control visualizer-surface__intensity">
-              <span class="control__row">
-                <span>Intensity</span>
-                <output data-role="visualizer-intensity-output">${formatPercent(intensity)}</output>
-              </span>
-              <input
-                data-input="visualizer-intensity"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value="${intensity.toFixed(2)}"
-              />
-            </label>
           </div>
         </div>
 
-        <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280"></canvas>
+        <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280" aria-label="Audio visualizer"></canvas>
       </section>
     </section>
   `;
@@ -3220,6 +3256,8 @@ function renderTimelineTransport(
 export function createApp(root: HTMLElement): void {
   const engine = new BinauralEngine();
   const sequencer = new SessionSequencer(engine);
+  let masterVolume = loadMasterVolume();
+  sequencer.setMasterVolume(masterVolume);
 
   let carrierDisplayMode: CarrierDisplayMode = 'note';
   const hashRestored = decodeShareableState(window.location.hash);
@@ -3254,6 +3292,8 @@ export function createApp(root: HTMLElement): void {
   let visualizerLastRendererError: string | null = null;
   let visualizerCanvasRef: HTMLCanvasElement | null = null;
   let visualizerBandActivity = createEmptyBandActivity();
+  let visualizerDecayFrameId: number | null = null;
+  let visualizerDecayStartMs: number | null = null;
   const ribbonFallbackStateByCanvas = new WeakMap<
     HTMLCanvasElement,
     {
@@ -3270,8 +3310,10 @@ export function createApp(root: HTMLElement): void {
   let timelineScrollAnimationFrameId: number | null = null;
   let lastPointerType: string = 'mouse';
   let headphoneNoticeVisible = !hasSeenHeadphoneNotice();
+  let highVolumeWarningDismissed = hasSeenHighVolumeWarning();
   let shareButtonLabel = 'Copy share link';
   let shareFeedbackTimeoutId: number | null = null;
+  let composerModalTrigger: HTMLElement | null = null;
   let envelopeDurationSeconds = 5;
   let envelopeSamples = computeEnvelope([], envelopeDurationSeconds, 0);
   let animationFrameId: number | null = null;
@@ -3291,6 +3333,26 @@ export function createApp(root: HTMLElement): void {
   if (!headerShell || !workspaceShell) {
     throw new Error('App shell did not initialize.');
   }
+
+  const showToast = (message: string, durationMs = 2200): void => {
+    let container = document.querySelector<HTMLElement>('.toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'toast-container';
+      container.setAttribute('role', 'status');
+      container.setAttribute('aria-live', 'polite');
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('is-leaving');
+      toast.addEventListener('transitionend', () => toast.remove());
+      setTimeout(() => toast.remove(), 500);
+    }, durationMs);
+  };
 
   const ensureTimelineUI = (
     partial?: Partial<TimelineWorkspaceUIState>,
@@ -3367,7 +3429,7 @@ export function createApp(root: HTMLElement): void {
     const state = selectedState();
     engine.setBaseParams({
       pairs: state.pairs,
-      masterGain: state.masterGain,
+      masterGain: state.gain * masterVolume,
     });
     engine.setNoise(state.noise);
     syncEngineSnapshot();
@@ -3457,14 +3519,40 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (headphoneNotice) {
-      headphoneNotice.innerHTML = headphoneNoticeVisible
-        ? `
-          <div class="notice-banner">
-            <div>
-              <strong>Use headphones.</strong>
-              <p>This tool depends on stereo separation. Speakers will collapse the effect.</p>
+      const shouldShow = headphoneNoticeVisible;
+      const isShowing = headphoneNotice.children.length > 0;
+      if (shouldShow !== isShowing) {
+        headphoneNotice.innerHTML = shouldShow
+          ? `
+            <div class="notice-banner">
+              <div>
+                <strong>Use headphones.</strong>
+                <p>This tool depends on stereo separation. Speakers will collapse the effect.</p>
+              </div>
+              <button class="ghost-button" data-action="dismiss-headphone-notice">I understand</button>
             </div>
-            <button class="ghost-button" data-action="dismiss-headphone-notice">I understand</button>
+          `
+          : '';
+      }
+    }
+  };
+
+  const syncHighVolumeWarning = (): void => {
+    const container = root.querySelector<HTMLElement>('[data-role="high-volume-warning"]');
+    if (!container) {
+      return;
+    }
+    const shouldShow = masterVolume > 0.45 && !highVolumeWarningDismissed;
+    const isShowing = container.children.length > 0;
+    if (shouldShow !== isShowing) {
+      container.innerHTML = shouldShow
+        ? `
+          <div class="notice-banner" role="alert">
+            <div>
+              <strong>High volume warning.</strong>
+              <p>Prolonged listening at high volume may cause hearing damage. Consider keeping volume at a comfortable level.</p>
+            </div>
+            <button class="ghost-button" data-action="dismiss-high-volume-warning">I understand</button>
           </div>
         `
         : '';
@@ -3770,7 +3858,7 @@ export function createApp(root: HTMLElement): void {
     if (renderSupport) {
       supportControls.innerHTML = renderSupportControls(
         state.noise,
-        state.masterGain,
+        state.gain,
       );
     }
 
@@ -3778,9 +3866,8 @@ export function createApp(root: HTMLElement): void {
     const noiseRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="noiseVolume"]');
     const noiseOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="noise-output"]');
     const noiseModel = supportControls.querySelector<HTMLSelectElement>('select[data-input="noiseModel"]');
-    const masterRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="masterGain"]');
-    const masterOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="master-output"]');
-
+    const segmentGainRange = supportControls.querySelector<HTMLInputElement>('input[type="range"][data-input="segmentGain"]');
+    const segmentGainOutput = supportControls.querySelector<HTMLOutputElement>('[data-role="segment-gain-output"]');
     if (noiseCheckbox) {
       noiseCheckbox.checked = state.noise.enabled;
     }
@@ -3793,11 +3880,11 @@ export function createApp(root: HTMLElement): void {
     if (noiseModel) {
       noiseModel.value = state.noise.model;
     }
-    if (masterRange) {
-      masterRange.value = String(state.masterGain);
+    if (segmentGainRange) {
+      segmentGainRange.value = String(state.gain);
     }
-    if (masterOutput) {
-      masterOutput.value = formatPercent(state.masterGain);
+    if (segmentGainOutput) {
+      segmentGainOutput.value = formatPercent(state.gain);
     }
   };
 
@@ -4611,10 +4698,36 @@ export function createApp(root: HTMLElement): void {
     return drawCanvas;
   };
 
+  const startVisualizerDecay = (): void => {
+    if (visualizerDecayFrameId !== null) return;
+    visualizerDecayStartMs = performance.now();
+    const tick = (): void => {
+      const now = performance.now();
+      syncVisualizerCanvas(now);
+      if (visualizerDecayStartMs !== null && now - visualizerDecayStartMs > 2000) {
+        stopVisualizerDecay();
+        syncVisualizerCanvas(performance.now());
+        return;
+      }
+      visualizerDecayFrameId = requestAnimationFrame(tick);
+    };
+    visualizerDecayFrameId = requestAnimationFrame(tick);
+  };
+
+  const stopVisualizerDecay = (): void => {
+    if (visualizerDecayFrameId !== null) {
+      cancelAnimationFrame(visualizerDecayFrameId);
+      visualizerDecayFrameId = null;
+    }
+    visualizerDecayStartMs = null;
+  };
+
   const syncVisualizerCanvas = (nowMs = performance.now()): void => {
+    const playing = activePlaybackState().status === 'playing';
+    const beatMap = playing ? computeBeatMap(engineState.pairs) : [];
     visualizerBandActivity = advanceBandActivity(
       visualizerBandActivity,
-      computeBeatMap(engineState.pairs),
+      beatMap,
       0.2,
     );
     syncVisualizerBandLeds();
@@ -4664,6 +4777,7 @@ export function createApp(root: HTMLElement): void {
       deltaMs,
       intensity: visualizerIntensity,
       bandActivity: visualizerBandActivity,
+      isPlaying: playing,
     };
 
     if (visualizerPixiFailed) {
@@ -5010,8 +5124,8 @@ export function createApp(root: HTMLElement): void {
 
     headerShell.innerHTML =
       playbackMode === 'analysis'
-        ? renderAnalysisHeader(session, shareButtonLabel)
-        : renderTimelineHeader(session, shareButtonLabel, playbackMode);
+        ? renderAnalysisHeader(session, shareButtonLabel, masterVolume)
+        : renderTimelineHeader(session, shareButtonLabel, playbackMode, masterVolume);
 
     workspaceShell.innerHTML =
       playbackMode === 'timeline'
@@ -5024,7 +5138,6 @@ export function createApp(root: HTMLElement): void {
         : playbackMode === 'visualizer'
           ? renderVisualizerWorkspace(
               activeVisualizerId,
-              visualizerIntensity,
               visualizerBandActivity,
             )
           : renderManualWorkspace(
@@ -5248,6 +5361,12 @@ export function createApp(root: HTMLElement): void {
     syncAdvancedPlaybackVisuals();
     syncVisualizerCanvas();
     syncDiagnostics();
+    if (
+      playbackMode === 'visualizer' &&
+      activePlaybackState().status === 'complete'
+    ) {
+      startVisualizerDecay();
+    }
   });
 
   sequencer.onSegmentChange(() => {
@@ -5442,19 +5561,6 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
-    if (inputKey === 'visualizer-intensity' && target instanceof HTMLInputElement) {
-      visualizerIntensity = clampNumeric(Number(target.value), 0, 1);
-      target.value = visualizerIntensity.toFixed(2);
-      const output = root.querySelector<HTMLOutputElement>(
-        '[data-role="visualizer-intensity-output"]',
-      );
-      if (output) {
-        output.value = formatPercent(visualizerIntensity);
-      }
-      syncVisualizerCanvas();
-      return;
-    }
-
     if (inputKey === 'session-loop') {
       replaceSession(
         createSessionDefinition({
@@ -5502,17 +5608,34 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
-    if (inputKey === 'masterGain') {
+    if (inputKey === 'segmentGain') {
+      const gainValue = Number((target as HTMLInputElement).value);
       updateSelectedSegment(
         (segment) => ({
           ...segment,
           state: sanitizeSessionSoundState({
             ...segment.state,
-            masterGain: Number((target as HTMLInputElement).value),
+            gain: gainValue,
           }),
         }),
         false,
       );
+      const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="segment-gain-output"]');
+      if (output) {
+        output.value = formatPercent(gainValue);
+      }
+      return;
+    }
+
+    if (inputKey === 'masterVolume') {
+      masterVolume = Math.min(1, Math.max(0, Number((target as HTMLInputElement).value)));
+      sequencer.setMasterVolume(masterVolume);
+      saveMasterVolume(masterVolume);
+      const output = (target as HTMLElement).closest('label')?.querySelector<HTMLOutputElement>('[data-role="master-output"]');
+      if (output) {
+        output.value = formatPercent(masterVolume);
+      }
+      syncHighVolumeWarning();
       return;
     }
 
@@ -5901,6 +6024,7 @@ export function createApp(root: HTMLElement): void {
         if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(window.location.href);
           shareButtonLabel = 'Link copied';
+          showToast('Link copied to clipboard');
         } else {
           shareButtonLabel = 'Link in address bar';
         }
@@ -5924,6 +6048,13 @@ export function createApp(root: HTMLElement): void {
       headphoneNoticeVisible = false;
       markHeadphoneNoticeSeen();
       syncHeader();
+      return;
+    }
+
+    if (action === 'dismiss-high-volume-warning') {
+      highVolumeWarningDismissed = true;
+      markHighVolumeWarningSeen();
+      syncHighVolumeWarning();
       return;
     }
 
@@ -5956,6 +6087,9 @@ export function createApp(root: HTMLElement): void {
       pendingRemoveSegmentId = null;
       renderLayout();
       persistAppState();
+      if (nextMode === 'visualizer' && activePlaybackState().status !== 'playing') {
+        startVisualizerDecay();
+      }
       return;
     }
 
@@ -5996,10 +6130,14 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'open-composer-modal') {
+      composerModalTrigger = document.activeElement as HTMLElement | null;
       ensureTimelineUI({
         composerModalOpen: true,
       });
+      document.body.classList.add('modal-open');
       renderLayout();
+      const dialog = root.querySelector<HTMLElement>('[role="dialog"]');
+      dialog?.focus();
       persistAppState();
       return;
     }
@@ -6008,6 +6146,9 @@ export function createApp(root: HTMLElement): void {
       ensureTimelineUI({
         composerModalOpen: false,
       });
+      document.body.classList.remove('modal-open');
+      composerModalTrigger?.focus();
+      composerModalTrigger = null;
       renderLayout();
       persistAppState();
       return;
@@ -6084,6 +6225,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'play-timeline') {
+      stopVisualizerDecay();
       clearTimelineDragState();
       syncSequencerPlaybackTarget();
       await sequencer.play();
@@ -6094,6 +6236,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (action === 'visualizer-play') {
+      stopVisualizerDecay();
       syncSequencerPlaybackTarget();
       if (activePlaybackState().status === 'paused') {
         await sequencer.resume();
@@ -6101,7 +6244,8 @@ export function createApp(root: HTMLElement): void {
         await sequencer.play();
       }
       syncEngineSnapshot();
-      renderLayout();
+      syncHeader();
+      syncVisualizerTransport();
       persistAppState();
       return;
     }
@@ -6109,8 +6253,10 @@ export function createApp(root: HTMLElement): void {
     if (action === 'visualizer-pause') {
       await sequencer.pause();
       syncEngineSnapshot();
-      renderLayout();
+      syncHeader();
+      syncVisualizerTransport();
       persistAppState();
+      startVisualizerDecay();
       return;
     }
 
@@ -6119,10 +6265,14 @@ export function createApp(root: HTMLElement): void {
       syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      if (playbackMode === 'visualizer') {
+        startVisualizerDecay();
+      }
       return;
     }
 
     if (action === 'resume-timeline') {
+      stopVisualizerDecay();
       await sequencer.resume();
       syncEngineSnapshot();
       renderLayout();
@@ -6135,6 +6285,9 @@ export function createApp(root: HTMLElement): void {
       syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      if (playbackMode === 'visualizer') {
+        startVisualizerDecay();
+      }
       return;
     }
 
@@ -6335,6 +6488,7 @@ export function createApp(root: HTMLElement): void {
         const plan = generateSessionPlan(composerDraftToRequest(composerDraft));
         composerExplanation = plan.explanation;
         playbackMode = 'timeline';
+        document.body.classList.remove('modal-open');
         replaceSession(plan.session, {
           preserveWorkspace: false,
           tab: 'timeline',
@@ -6343,6 +6497,7 @@ export function createApp(root: HTMLElement): void {
           selectedPairId: plan.session.segments[0]?.state.pairs[0]?.id ?? null,
           composerModalOpen: false,
         });
+        showToast('Timeline generated');
       } catch (error) {
         composerExplanation = [
           error instanceof Error
@@ -6350,6 +6505,7 @@ export function createApp(root: HTMLElement): void {
             : 'Could not generate a timeline from that input yet.',
         ];
         syncComposerOutput();
+        showToast('Could not generate timeline');
       }
       persistAppState();
       return;
@@ -6621,7 +6777,7 @@ export function createApp(root: HTMLElement): void {
         return;
       }
       const targets = collectSegmentOverrideTargets(selected);
-      const defaultTarget = targets[0] ?? 'masterGain';
+      const defaultTarget = targets[0] ?? 'gain';
       const startValue = segmentStartValueForOverrideTarget(
         selected,
         defaultTarget,
@@ -6783,17 +6939,107 @@ export function createApp(root: HTMLElement): void {
     }
   });
 
-  window.addEventListener('keydown', (event) => {
-    if (
-      event.key === 'Escape' &&
-      playbackMode === 'timeline' &&
-      timelineUI.composerModalOpen
-    ) {
-      ensureTimelineUI({
-        composerModalOpen: false,
-      });
+  window.addEventListener('keydown', async (event) => {
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    const isEditing =
+      tag === 'input' ||
+      tag === 'textarea' ||
+      tag === 'select' ||
+      (document.activeElement as HTMLElement)?.isContentEditable;
+
+    // Tab trapping inside composer modal
+    if (event.key === 'Tab' && timelineUI.composerModalOpen) {
+      const dialog = root.querySelector<HTMLElement>('[role="dialog"]');
+      if (dialog) {
+        const focusable = dialog.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
+      return;
+    }
+
+    // Escape: close modal or stop playback
+    if (event.key === 'Escape') {
+      if (playbackMode === 'timeline' && timelineUI.composerModalOpen) {
+        ensureTimelineUI({ composerModalOpen: false });
+        document.body.classList.remove('modal-open');
+        composerModalTrigger?.focus();
+        composerModalTrigger = null;
+        renderLayout();
+        persistAppState();
+        return;
+      }
+      const status = activePlaybackState().status;
+      if (status === 'playing' || status === 'paused') {
+        await sequencer.stop();
+        syncEngineSnapshot();
+        renderLayout();
+        persistAppState();
+        if (playbackMode === 'visualizer') {
+          startVisualizerDecay();
+        }
+        return;
+      }
+    }
+
+    if (isEditing) return;
+
+    // Space: toggle play/pause
+    if (event.key === ' ' || event.code === 'Space') {
+      event.preventDefault();
+      if (playbackMode === 'analysis') return;
+      const status = activePlaybackState().status;
+      if (status === 'playing') {
+        await sequencer.pause();
+        if (playbackMode === 'visualizer') {
+          startVisualizerDecay();
+        }
+      } else if (status === 'paused') {
+        stopVisualizerDecay();
+        await sequencer.resume();
+      } else {
+        stopVisualizerDecay();
+        syncSequencerPlaybackTarget();
+        await sequencer.play();
+      }
+      syncEngineSnapshot();
       renderLayout();
       persistAppState();
+      return;
+    }
+
+    // Arrow keys: segment navigation in timeline mode
+    if (
+      playbackMode === 'timeline' &&
+      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+    ) {
+      const segments = session.segments;
+      if (segments.length === 0) return;
+      const currentIdx = segments.findIndex(
+        (s) => s.id === timelineUI.selectedSegmentId,
+      );
+      let nextIdx: number;
+      if (event.key === 'ArrowLeft') {
+        nextIdx = currentIdx <= 0 ? segments.length - 1 : currentIdx - 1;
+      } else {
+        nextIdx =
+          currentIdx >= segments.length - 1 ? 0 : currentIdx + 1;
+      }
+      ensureTimelineUI({ selectedSegmentId: segments[nextIdx].id });
+      renderLayout();
+      persistAppState();
+      return;
     }
   });
 

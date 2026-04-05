@@ -34,6 +34,7 @@ export interface VisualizerFrameInput {
   deltaMs: number;
   intensity: number;
   bandActivity: VisualizerBandActivity;
+  isPlaying: boolean;
   width: number;
   height: number;
 }
@@ -204,11 +205,15 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
       });
 
       if (smoothed.length !== signal.mono.length) {
-        smoothed = signal.mono.slice();
-      } else {
-        const alpha = 0.16 + intensity * 0.12;
+        smoothed = new Float32Array(signal.mono.length);
+      }
+      {
+        const alpha = frame.isPlaying
+          ? 0.16 + intensity * 0.12
+          : 0.08;
         for (let index = 0; index < smoothed.length; index += 1) {
-          smoothed[index] = smoothed[index]! * (1 - alpha) + signal.mono[index]! * alpha;
+          const target = frame.isPlaying ? signal.mono[index]! : 0;
+          smoothed[index] = smoothed[index]! * (1 - alpha) + target * alpha;
         }
       }
 
@@ -226,14 +231,14 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
       });
 
       ribbonMid.clear();
-      strokeSignalPath(ribbonMid, signal.mono, width, centerY, baseAmplitude, {
+      strokeSignalPath(ribbonMid, smoothed, width, centerY, baseAmplitude, {
         width: 4 + intensity * 1.5,
         color: 0xb88c63,
         alpha: 0.38,
       });
 
       ribbonHigh.clear();
-      strokeSignalPath(ribbonHigh, signal.mono, width, centerY, baseAmplitude * 1.02, {
+      strokeSignalPath(ribbonHigh, smoothed, width, centerY, baseAmplitude * 1.02, {
         width: 1.75,
         color: 0x91562b,
         alpha: 0.82,
@@ -305,24 +310,32 @@ function createStereoDriftRibbonsScene(): (root: Container) => VisualizerScene {
         motionScale: 0.78,
       });
       if (smoothedLeft.length !== signal.left.length) {
-        smoothedLeft = signal.left.slice();
-        smoothedRight = signal.right.slice();
+        smoothedLeft = new Float32Array(signal.left.length);
+        smoothedRight = new Float32Array(signal.left.length);
         smoothedMid = new Float32Array(signal.left.length);
-      } else {
-        const temporalAlpha = 0.14 + intensity * 0.12;
+      }
+      {
+        const temporalAlpha = frame.isPlaying
+          ? 0.14 + intensity * 0.12
+          : 0.08;
         for (let index = 0; index < signal.left.length; index += 1) {
-          const leftPrev = index > 0 ? signal.left[index - 1]! : signal.left[index]!;
-          const leftNext =
-            index < signal.left.length - 1 ? signal.left[index + 1]! : signal.left[index]!;
-          const rightPrev = index > 0 ? signal.right[index - 1]! : signal.right[index]!;
-          const rightNext =
-            index < signal.right.length - 1 ? signal.right[index + 1]! : signal.right[index]!;
-          const leftSpatial = leftPrev * 0.2 + signal.left[index]! * 0.6 + leftNext * 0.2;
-          const rightSpatial = rightPrev * 0.2 + signal.right[index]! * 0.6 + rightNext * 0.2;
-          smoothedLeft[index] =
-            smoothedLeft[index]! * (1 - temporalAlpha) + leftSpatial * temporalAlpha;
-          smoothedRight[index] =
-            smoothedRight[index]! * (1 - temporalAlpha) + rightSpatial * temporalAlpha;
+          if (frame.isPlaying) {
+            const leftPrev = index > 0 ? signal.left[index - 1]! : signal.left[index]!;
+            const leftNext =
+              index < signal.left.length - 1 ? signal.left[index + 1]! : signal.left[index]!;
+            const rightPrev = index > 0 ? signal.right[index - 1]! : signal.right[index]!;
+            const rightNext =
+              index < signal.right.length - 1 ? signal.right[index + 1]! : signal.right[index]!;
+            const leftSpatial = leftPrev * 0.2 + signal.left[index]! * 0.6 + leftNext * 0.2;
+            const rightSpatial = rightPrev * 0.2 + signal.right[index]! * 0.6 + rightNext * 0.2;
+            smoothedLeft[index] =
+              smoothedLeft[index]! * (1 - temporalAlpha) + leftSpatial * temporalAlpha;
+            smoothedRight[index] =
+              smoothedRight[index]! * (1 - temporalAlpha) + rightSpatial * temporalAlpha;
+          } else {
+            smoothedLeft[index] = smoothedLeft[index]! * (1 - temporalAlpha);
+            smoothedRight[index] = smoothedRight[index]! * (1 - temporalAlpha);
+          }
         }
       }
 
@@ -433,14 +446,18 @@ function createSpectralAuroraScene(): (root: Container) => VisualizerScene {
         smoothedFrames !== bands.frameCount ||
         smoothedBandCount !== bands.bandCount
       ) {
-        smoothedBands = bands.values.slice();
+        smoothedBands = new Float32Array(bands.values.length);
         smoothedFrames = bands.frameCount;
         smoothedBandCount = bands.bandCount;
-      } else {
-        const alpha = 0.22 + intensity * 0.18;
+      }
+      {
+        const alpha = frame.isPlaying
+          ? 0.22 + intensity * 0.18
+          : 0.08;
         for (let index = 0; index < smoothedBands.length; index += 1) {
+          const target = frame.isPlaying ? bands.values[index]! : 0;
           smoothedBands[index] =
-            smoothedBands[index]! * (1 - alpha) + bands.values[index]! * alpha;
+            smoothedBands[index]! * (1 - alpha) + target * alpha;
         }
       }
 

@@ -24,7 +24,7 @@ describe('timeline workspace helpers', () => {
           overrides: [],
           state: {
             pairs: [],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: false,
               volume: 0.05,
@@ -57,7 +57,7 @@ describe('timeline workspace helpers', () => {
           overrides: [],
           state: {
             pairs: [],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: false,
               volume: 0.05,
@@ -73,7 +73,7 @@ describe('timeline workspace helpers', () => {
           overrides: [],
           state: {
             pairs: [],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: false,
               volume: 0.05,
@@ -106,7 +106,7 @@ describe('timeline workspace helpers', () => {
           overrides: [],
           state: {
             pairs: [],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: false,
               volume: 0.05,
@@ -166,7 +166,7 @@ describe('timeline workspace helpers', () => {
           overrides: [],
           state: {
             pairs: [],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: false,
               volume: 0.05,
@@ -222,7 +222,7 @@ describe('timeline workspace helpers', () => {
             {
               id: 'segment-override',
               label: 'Segment override',
-              target: 'masterGain' as const,
+              target: 'gain' as const,
               interpolation: 'linear' as const,
               enabled: true,
               keyframes: [{ id: 'segment-keyframe', time: 0, value: 0.2 }],
@@ -230,7 +230,7 @@ describe('timeline workspace helpers', () => {
             {
               id: 'custom-override',
               label: 'Custom override',
-              target: 'masterGain' as const,
+              target: 'gain' as const,
               interpolation: 'linear' as const,
               enabled: true,
               keyframes: [{ id: 'custom-keyframe', time: 0, value: 0.2 }],
@@ -238,7 +238,7 @@ describe('timeline workspace helpers', () => {
           ],
           state: {
             pairs: [],
-            masterGain: 0.22,
+            gain: 0.22,
             noise: {
               enabled: false,
               volume: 0.05,

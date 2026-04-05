@@ -21,7 +21,7 @@ function createTestSession() {
               gain: 0.7,
             }),
           ],
-          masterGain: 0.2,
+          gain: 0.2,
           noise: {
             enabled: false,
             volume: 0.05,
@@ -43,7 +43,7 @@ function createTestSession() {
               gain: 0.7,
             }),
           ],
-          masterGain: 0.22,
+          gain: 0.22,
           noise: {
             enabled: true,
             volume: 0.06,
@@ -262,7 +262,7 @@ describe('SessionSequencer', () => {
                 gain: 0.7,
               }),
             ],
-            masterGain: 0.2,
+            gain: 0.2,
             noise: {
               enabled: false,
               volume: 0.05,
@@ -284,7 +284,7 @@ describe('SessionSequencer', () => {
                 gain: 0.7,
               }),
             ],
-            masterGain: 0.18,
+            gain: 0.18,
             noise: {
               enabled: true,
               volume: 0.08,
@@ -295,7 +295,7 @@ describe('SessionSequencer', () => {
             {
               id: 'segment-2-master',
               label: 'Master',
-              target: 'masterGain',
+              target: 'gain',
               interpolation: 'linear',
               enabled: true,
               keyframes: [
@@ -329,7 +329,7 @@ describe('SessionSequencer', () => {
 
     const latestBaseCall = engine.setBaseParams.mock.calls.at(-1)?.[0];
     expect(latestBaseCall?.pairs?.[0]?.carrierHz).toBeCloseTo(260, 6);
-    expect(latestBaseCall?.masterGain).toBeCloseTo(0.2375, 3);
+    expect(latestBaseCall?.masterGain).toBeCloseTo(0.2375 * 0.22, 3);
     await sequencer.stop();
   });
 

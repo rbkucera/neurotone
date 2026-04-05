@@ -40,7 +40,7 @@ export function sanitizeSessionSoundState(
   return {
     pairs:
       input.pairs?.map((pair) => sanitizeTonePair(pair)) ?? [sanitizeTonePair()],
-    masterGain: clamp(input.masterGain ?? 0.22, 0, 1),
+    gain: clamp(input.gain ?? 1, 0, 1),
     noise: sanitizeNoiseConfig(input.noise ?? {}),
   };
 }
@@ -61,7 +61,7 @@ function normalizeOverrideValue(
     return 0;
   }
 
-  if (target === 'masterGain' || target === 'noise.volume' || target.endsWith('.gain')) {
+  if (target === 'gain' || target === 'noise.volume' || target.endsWith('.gain')) {
     return clamp(value, 0, 1);
   }
 
@@ -79,7 +79,7 @@ function normalizeOverrideValue(
 function sanitizeSegmentOverrideLane(
   input: Partial<SegmentOverrideLane>,
 ): SegmentOverrideLane {
-  const target = (input.target ?? 'masterGain') as SegmentOverrideTarget;
+  const target = (input.target ?? 'gain') as SegmentOverrideTarget;
   const keyframes =
     input.keyframes?.map((keyframe) => ({
       id: keyframe.id ?? createId('keyframe'),
@@ -224,9 +224,9 @@ export function interpolateSoundStates(
 
   return sanitizeSessionSoundState({
     pairs,
-    masterGain: interpolateNumber(
-      from.masterGain,
-      to.masterGain,
+    gain: interpolateNumber(
+      from.gain,
+      to.gain,
       clampedProgress,
     ),
     noise: {
@@ -247,8 +247,8 @@ function applyLaneValue(
   target: SegmentOverrideTarget,
   value: number | boolean | NoiseConfig['model'],
 ): void {
-  if (target === 'masterGain' && typeof value === 'number') {
-    state.masterGain = clamp(value, 0, 1);
+  if (target === 'gain' && typeof value === 'number') {
+    state.gain = clamp(value, 0, 1);
     return;
   }
 
@@ -393,7 +393,7 @@ export function buildAutomationLanesFromSegments(
     const segmentState = window.segment.state;
     const time = index === 0 ? 0 : window.holdStart;
 
-    pushKeyframe('masterGain', time, segmentState.masterGain);
+    pushKeyframe('gain', time, segmentState.gain);
     pushKeyframe('noise.volume', time, segmentState.noise.volume);
     pushKeyframe('noise.enabled', time, segmentState.noise.enabled);
     pushKeyframe('noise.model', time, segmentState.noise.model);
