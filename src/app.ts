@@ -3159,7 +3159,7 @@ function renderVisualizerWorkspace(
           </div>
         </div>
 
-        <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280"></canvas>
+        <canvas class="visualizer-canvas" data-role="visualizer-canvas" height="280" aria-label="Audio visualizer"></canvas>
       </section>
     </section>
   `;
@@ -3344,6 +3344,8 @@ export function createApp(root: HTMLElement): void {
     if (!container) {
       container = document.createElement('div');
       container.className = 'toast-container';
+      container.setAttribute('role', 'status');
+      container.setAttribute('aria-live', 'polite');
       document.body.appendChild(container);
     }
     const toast = document.createElement('div');
@@ -3550,7 +3552,7 @@ export function createApp(root: HTMLElement): void {
     if (shouldShow !== isShowing) {
       container.innerHTML = shouldShow
         ? `
-          <div class="notice-banner">
+          <div class="notice-banner" role="alert">
             <div>
               <strong>High volume warning.</strong>
               <p>Prolonged listening at high volume may cause hearing damage. Consider keeping volume at a comfortable level.</p>

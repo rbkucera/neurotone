@@ -149,10 +149,9 @@ export function generateSessionPlan(
         1,
         Number((request.stepDuration * step.durationMultiplier).toFixed(2)),
       );
-      const transitionDuration =
-        stepIndex === 0
-          ? 0
-          : Number((holdDuration * profile.transitionRatio).toFixed(2));
+      const transitionDuration = Number(
+        (holdDuration * profile.transitionRatio).toFixed(2),
+      );
 
       return createSessionSegment({
         id: `segment-${stepIndex + 1}`,

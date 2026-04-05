@@ -2789,8 +2789,6 @@ input[type="range"] {
 .advanced-keyframe-list {
   display: grid;
   gap: 6px;
-  max-height: 132px;
-  overflow: auto;
   padding-right: 2px;
 }
 
