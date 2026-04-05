@@ -523,7 +523,17 @@ export class BinauralEngine {
       ...this.base,
       masterGain: clamp(value, LIMITS.gainMin, LIMITS.gainMax),
     };
-    this.syncMasterGain();
+
+    if (!this.context || !this.masterGainNode) {
+      return;
+    }
+
+    const pairGainSum = this.base.pairs.reduce(
+      (sum, pair) => sum + pair.gain,
+      0,
+    );
+    const headroom = Math.max(1, pairGainSum);
+    this.masterGainNode.gain.value = this.base.masterGain / headroom;
   }
 
   setBaseParams(params: Partial<BaseParams>): EngineSnapshot {
