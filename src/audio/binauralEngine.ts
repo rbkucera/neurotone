@@ -611,6 +611,8 @@ export class BinauralEngine {
 
     const context = new AudioContext();
     const masterGainNode = context.createGain();
+    masterGainNode.channelCount = 2;
+    masterGainNode.channelCountMode = 'explicit';
     masterGainNode.gain.value = this.base.masterGain;
     masterGainNode.connect(context.destination);
 
@@ -671,6 +673,9 @@ export class BinauralEngine {
     const rightOsc = this.context.createOscillator();
     const merger = this.context.createChannelMerger(2);
     const output = this.context.createGain();
+    output.channelCount = 2;
+    output.channelCountMode = 'explicit';
+    output.channelInterpretation = 'discrete';
     output.gain.value = 0;
 
     leftOsc.type = 'sine';
