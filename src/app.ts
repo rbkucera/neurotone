@@ -66,9 +66,12 @@ import {
   deleteSavedSession,
   exportSavedSessions,
   importSavedSessions,
+  loadTheme,
+  saveTheme,
   type ComposerDraft,
   type PlaybackMode,
   type SavedSession,
+  type ThemeId,
   type ShareableState,
 } from './sessionState';
 import { catalog, getCatalogEntry, type CatalogEntry } from './catalog';
@@ -2146,7 +2149,13 @@ function renderManualDiagnosticsMarkup(
   `;
 }
 
-function renderHeaderVolumeSlider(masterVolume: number): string {
+function renderThemeToggle(theme: ThemeId): string {
+  const icon = theme === 'dark' ? '&#x2600;' : '&#x263E;';
+  const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  return `<button class="theme-toggle" data-action="cycle-theme" type="button" aria-label="${label}" title="${label}">${icon}</button>`;
+}
+
+function renderHeaderVolumeSlider(masterVolume: number, theme: ThemeId): string {
   return `
     <label class="tool-header__volume">
       <input
@@ -2159,6 +2168,7 @@ function renderHeaderVolumeSlider(masterVolume: number): string {
       />
       <output data-role="master-output">${formatPercent(masterVolume)}</output>
     </label>
+    ${renderThemeToggle(theme)}
   `;
 }
 
@@ -2166,6 +2176,7 @@ function renderAnalysisHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
   masterVolume: number,
+  theme: ThemeId,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
@@ -2187,7 +2198,7 @@ function renderAnalysisHeader(
               Return to timeline
             </button>
 
-            ${renderHeaderVolumeSlider(masterVolume)}
+            ${renderHeaderVolumeSlider(masterVolume, theme)}
           </div>
         </div>
       </div>
@@ -2202,6 +2213,7 @@ function renderTimelineHeader(
   shareButtonLabel: string,
   playbackMode: PlaybackMode,
   masterVolume: number,
+  theme: ThemeId,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
@@ -2223,7 +2235,7 @@ function renderTimelineHeader(
               ${renderPlaybackModeToggle(playbackMode)}
             </label>
 
-            ${renderHeaderVolumeSlider(masterVolume)}
+            ${renderHeaderVolumeSlider(masterVolume, theme)}
           </div>
         </div>
       </div>
@@ -2233,12 +2245,15 @@ function renderTimelineHeader(
   `;
 }
 
-function renderCatalogHeader(): string {
+function renderCatalogHeader(theme: ThemeId): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <h2 class="tool-header__title">Neurotone</h2>
+          <div class="tool-header__controls">
+            ${renderThemeToggle(theme)}
+          </div>
         </div>
       </div>
     </section>
@@ -3447,6 +3462,29 @@ export function createApp(root: HTMLElement): void {
   let animationFrameId: number | null = null;
   let engineState: EngineSnapshot = engine.getSnapshot();
   let composerExplanation: string[] = [];
+  let currentTheme: ThemeId =
+    (document.documentElement.dataset.theme as ThemeId) || 'light';
+
+  const applyTheme = (theme: ThemeId): void => {
+    currentTheme = theme;
+    document.documentElement.dataset.theme = theme;
+    saveTheme(theme);
+  };
+
+  const cycleTheme = (): void => {
+    applyTheme(currentTheme === 'light' ? 'dark' : 'light');
+  };
+
+  // Follow system preference changes when no manual override exists
+  const systemDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  if (loadTheme() === null) {
+    systemDarkQuery.addEventListener('change', (e) => {
+      if (loadTheme() === null) {
+        applyTheme(e.matches ? 'dark' : 'light');
+        renderLayout();
+      }
+    });
+  }
 
   root.innerHTML = `
     <main class="shell">
@@ -5366,7 +5404,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (playbackMode === 'catalog') {
-      headerShell.innerHTML = renderCatalogHeader();
+      headerShell.innerHTML = renderCatalogHeader(currentTheme);
       workspaceShell.innerHTML = renderCatalogWorkspace(savedSessions);
       syncConfirmDialog();
       return;
@@ -5374,8 +5412,8 @@ export function createApp(root: HTMLElement): void {
 
     headerShell.innerHTML =
       playbackMode === 'analysis'
-        ? renderAnalysisHeader(session, shareButtonLabel, masterVolume)
-        : renderTimelineHeader(session, shareButtonLabel, playbackMode, masterVolume);
+        ? renderAnalysisHeader(session, shareButtonLabel, masterVolume, currentTheme)
+        : renderTimelineHeader(session, shareButtonLabel, playbackMode, masterVolume, currentTheme);
 
     workspaceShell.innerHTML =
       playbackMode === 'timeline'
@@ -6291,6 +6329,12 @@ export function createApp(root: HTMLElement): void {
 
     const action = actionTarget.dataset.action;
     if (!action) {
+      return;
+    }
+
+    if (action === 'cycle-theme') {
+      cycleTheme();
+      renderLayout();
       return;
     }
 

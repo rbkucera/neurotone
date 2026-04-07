@@ -11,6 +11,226 @@
   --accent-strong: #7f4319;
   --accent-muted: rgba(157, 94, 47, 0.12);
   --shadow: 0 24px 60px rgba(75, 57, 40, 0.12);
+  --surface: rgba(252, 249, 244, 0.96);
+  --surface-raised: rgba(255, 255, 255, 0.74);
+  --surface-inset: rgba(241, 234, 224, 0.98);
+  --border: rgba(75, 57, 40, 0.14);
+  --border-subtle: rgba(75, 57, 40, 0.08);
+  --overlay: rgba(39, 27, 18, 0.25);
+  --btn-ghost-bg: rgba(109, 90, 73, 0.08);
+  --bg-radial: rgba(255, 255, 255, 0.55);
+  --panel-gradient-a: rgba(252, 249, 244, 0.96);
+  --panel-gradient-b: rgba(241, 234, 224, 0.98);
+  --panel-radial: rgba(127, 67, 25, 0.12);
+  --transport-text: #fff8f1;
+  --transport-shadow: rgba(127, 67, 25, 0.25);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark theme — Winamp-inspired                                        */
+/* ------------------------------------------------------------------ */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-top: #1a1a1e;
+  --bg-bottom: #141416;
+  --panel: rgba(28, 28, 32, 0.92);
+  --panel-border: rgba(255, 255, 255, 0.07);
+  --card: rgba(36, 36, 42, 0.6);
+  --text-strong: #d8d4cc;
+  --text-soft: #8a8478;
+  --accent: #d4943a;
+  --accent-strong: #e8a84c;
+  --accent-muted: rgba(212, 148, 58, 0.14);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  --surface: rgba(30, 30, 34, 0.96);
+  --surface-raised: rgba(42, 42, 48, 0.8);
+  --surface-inset: rgba(20, 20, 24, 0.98);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --overlay: rgba(0, 0, 0, 0.55);
+  --btn-ghost-bg: rgba(255, 255, 255, 0.06);
+  --bg-radial: rgba(212, 148, 58, 0.04);
+  --panel-gradient-a: rgba(28, 28, 32, 0.96);
+  --panel-gradient-b: rgba(22, 22, 26, 0.98);
+  --panel-radial: rgba(212, 148, 58, 0.06);
+  --transport-text: #1a1a1e;
+  --transport-shadow: rgba(212, 148, 58, 0.25);
+}
+
+/* --- Dark theme component overrides --- */
+
+[data-theme="dark"] .hero,
+[data-theme="dark"] .panel {
+  background: var(--panel);
+  border-color: var(--panel-border);
+}
+
+[data-theme="dark"] .panel--tool-header-timeline,
+[data-theme="dark"] .panel--workspace-timeline,
+[data-theme="dark"] .panel--workspace-advanced,
+[data-theme="dark"] .panel--workspace-compose {
+  border-color: var(--border);
+  background: linear-gradient(180deg, var(--panel-gradient-a), var(--panel-gradient-b));
+}
+
+[data-theme="dark"] .segmented-control {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .segmented-control__button.is-active {
+  background: var(--accent-muted);
+  color: var(--accent-strong);
+}
+
+[data-theme="dark"] .segment-card,
+[data-theme="dark"] .panel--visualizer-surface,
+[data-theme="dark"] .panel--manual-diagnostics-row,
+[data-theme="dark"] .panel--embedded,
+[data-theme="dark"] .advanced-surface,
+[data-theme="dark"] .mixer-grid,
+[data-theme="dark"] .lane-editor,
+[data-theme="dark"] .segment-editor,
+[data-theme="dark"] .analysis-pane {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .timeline-clip {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .timeline-clip.is-active {
+  border-color: var(--accent);
+}
+
+[data-theme="dark"] .segment-card.is-selected {
+  border-color: var(--accent);
+  background: var(--surface-raised);
+}
+
+[data-theme="dark"] .advanced-segment-chip {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .advanced-segment-chip.is-active {
+  border-color: var(--accent);
+}
+
+[data-theme="dark"] .composer-modal__dialog {
+  background: linear-gradient(180deg, var(--panel-gradient-a), var(--panel-gradient-b));
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .session-switcher__trigger {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .session-switcher__trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .catalog-card {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .catalog-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .catalog-card--saved {
+  background: var(--surface-raised);
+}
+
+[data-theme="dark"] .catalog-card__body:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .catalog-card__delete {
+  border-left-color: var(--border);
+}
+
+[data-theme="dark"] .catalog-card__delete:hover {
+  background: rgba(255, 80, 60, 0.1);
+  color: #ff6b5a;
+}
+
+[data-theme="dark"] .session-menu__item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .session-menu__item.is-active {
+  background: var(--accent-muted);
+}
+
+[data-theme="dark"] .session-menu__divider {
+  border-top-color: var(--border);
+}
+
+[data-theme="dark"] .toast {
+  background: var(--surface-raised);
+  color: var(--text-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] input[type="range"] {
+  accent-color: var(--accent);
+}
+
+[data-theme="dark"] .headphone-notice,
+[data-theme="dark"] .high-volume-warning {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .transport-row__readout {
+  color: var(--text-soft);
+}
+
+/* Visualizer bands pop more on dark backgrounds */
+[data-theme="dark"] .visualizer-band-led {
+  opacity: 0.95;
+}
+
+[data-theme="dark"] .band-pill--delta { background: rgba(111, 142, 207, 0.18); color: #8faee0; }
+[data-theme="dark"] .band-pill--theta { background: rgba(103, 178, 200, 0.18); color: #7cc4d6; }
+[data-theme="dark"] .band-pill--alpha { background: rgba(120, 191, 134, 0.18); color: #8fd49e; }
+[data-theme="dark"] .band-pill--beta  { background: rgba(213, 165, 111, 0.18); color: #dbb07a; }
+[data-theme="dark"] .band-pill--gamma { background: rgba(197, 128, 182, 0.18); color: #cc92bd; }
+
+[data-theme="dark"] .tool-header__share {
+  color: var(--text-soft);
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--btn-ghost-bg);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.theme-toggle:hover {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 * {
@@ -23,7 +243,7 @@ body {
   font-family: "Avenir Next", "Segoe UI", sans-serif;
   color: var(--text-strong);
   background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.55), transparent 30%),
+    radial-gradient(circle at top, var(--bg-radial), transparent 30%),
     linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
 }
 
@@ -202,9 +422,9 @@ h3 {
   padding: 16px 26px;
   min-width: 180px;
   font-weight: 600;
-  color: #fff8f1;
+  color: var(--transport-text);
   background: linear-gradient(180deg, var(--accent), var(--accent-strong));
-  box-shadow: 0 14px 32px rgba(127, 67, 25, 0.25);
+  box-shadow: 0 14px 32px var(--transport-shadow);
 }
 
 .transport:hover,
@@ -218,7 +438,7 @@ h3 {
   padding: 14px 18px;
   border-radius: 18px;
   color: var(--accent-strong);
-  background: rgba(157, 94, 47, 0.08);
+  background: var(--accent-muted);
 }
 
 .secondary-action--compact {
@@ -229,7 +449,7 @@ h3 {
 .ghost-button {
   padding: 10px 14px;
   border-radius: 999px;
-  background: rgba(109, 90, 73, 0.08);
+  background: var(--btn-ghost-bg);
   color: var(--text-soft);
 }
 
@@ -278,7 +498,7 @@ h3 {
   z-index: 1;
   padding: 9px 14px;
   border-radius: 999px;
-  background: rgba(109, 90, 73, 0.08);
+  background: var(--btn-ghost-bg);
   color: var(--text-soft);
   font-size: 0.88rem;
 }
@@ -379,7 +599,7 @@ h3 {
   gap: 4px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(109, 90, 73, 0.08);
+  background: var(--btn-ghost-bg);
 }
 
 .segmented-control__button {
@@ -826,9 +1046,9 @@ input[type="range"] {
 .panel--workspace-timeline,
 .panel--workspace-advanced,
 .panel--workspace-compose {
-  border-color: rgba(75, 57, 40, 0.22);
+  border-color: var(--border);
   background:
-    linear-gradient(180deg, rgba(252, 249, 244, 0.96), rgba(241, 234, 224, 0.98));
+    linear-gradient(180deg, var(--panel-gradient-a), var(--panel-gradient-b));
 }
 
 .panel--tool-header-timeline {
@@ -843,7 +1063,7 @@ input[type="range"] {
 .panel--workspace-timeline::after,
 .panel--workspace-advanced::after,
 .panel--workspace-compose::after {
-  background: radial-gradient(circle, rgba(127, 67, 25, 0.12), transparent 68%);
+  background: radial-gradient(circle, var(--panel-radial), transparent 68%);
 }
 
 .panel--workspace-timeline,
@@ -1122,7 +1342,7 @@ input[type="range"] {
 .composer-modal__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(34, 25, 18, 0.34);
+  background: var(--overlay);
   backdrop-filter: blur(2px);
 }
 
@@ -1134,10 +1354,10 @@ input[type="range"] {
   overflow: auto;
   padding: 16px;
   border-radius: 18px;
-  border: 1px solid rgba(75, 57, 40, 0.24);
+  border: 1px solid var(--border);
   background:
-    linear-gradient(180deg, rgba(252, 249, 244, 0.98), rgba(241, 234, 224, 0.99));
-  box-shadow: 0 18px 42px rgba(39, 27, 18, 0.28);
+    linear-gradient(180deg, var(--panel-gradient-a), var(--panel-gradient-b));
+  box-shadow: 0 18px 42px var(--overlay);
   animation: rise-in 220ms ease forwards;
 }
 
@@ -2999,7 +3219,7 @@ body.modal-open {
   padding: 12px 20px;
   border-radius: 999px;
   background: var(--text-strong);
-  color: #fff8f1;
+  color: var(--transport-text);
   font-size: 0.88rem;
   font-weight: 500;
   box-shadow: 0 8px 24px rgba(45, 34, 25, 0.2);
@@ -3339,9 +3559,9 @@ body.modal-open {
   max-width: 340px;
   padding: 6px;
   border-radius: 14px;
-  border: 1px solid rgba(75, 57, 40, 0.18);
-  background: rgba(252, 249, 244, 0.98);
-  box-shadow: 0 12px 32px rgba(39, 27, 18, 0.18);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--overlay);
   backdrop-filter: blur(12px);
 }
 
@@ -3395,7 +3615,7 @@ body.modal-open {
 .confirm-dialog__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(39, 27, 18, 0.25);
+  background: var(--overlay);
   backdrop-filter: blur(4px);
 }
 
@@ -3406,7 +3626,7 @@ body.modal-open {
   padding: 28px;
   border-radius: 20px;
   background: var(--surface);
-  box-shadow: 0 20px 60px rgba(39, 27, 18, 0.2);
+  box-shadow: 0 20px 60px var(--overlay);
 }
 
 .confirm-dialog__body h3 {

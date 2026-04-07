@@ -18,8 +18,11 @@ export const HEADPHONE_NOTICE_KEY = 'neurotone.headphone-notice.v1';
 const MASTER_VOLUME_KEY = 'neurotone.master-volume.v1';
 const HIGH_VOLUME_WARNING_KEY = 'neurotone.high-volume-warning.v1';
 const SAVED_SESSIONS_KEY = 'neurotone.saved-sessions.v1';
+const THEME_KEY = 'neurotone.theme.v1';
 
 export type PlaybackMode = 'timeline' | 'visualizer';
+
+export type ThemeId = 'light' | 'dark';
 
 export interface ComposerDraft {
   label: string;
@@ -577,4 +580,22 @@ export function importSavedSessions(json: string): number {
   }
   persistSavedSessions([...newSessions, ...existing]);
   return newSessions.length;
+}
+
+export function loadTheme(): ThemeId | null {
+  try {
+    const raw = window.localStorage.getItem(THEME_KEY);
+    if (raw === 'light' || raw === 'dark') return raw;
+  } catch {
+    // Fails silently for blocked storage.
+  }
+  return null;
+}
+
+export function saveTheme(theme: ThemeId): void {
+  try {
+    window.localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
 }
