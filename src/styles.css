@@ -3743,8 +3743,17 @@ body.modal-open {
   color: #ff8a7a;
 }
 
+[data-theme="dark"] .visualizer-band-leds {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .visualizer-band-led {
   opacity: 0.95;
+}
+
+[data-theme="dark"] .visualizer-band-led.is-active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .visualizer-band-led.is-dominant {
