@@ -2245,13 +2245,14 @@ function renderTimelineHeader(
   `;
 }
 
-function renderCatalogHeader(theme: ThemeId): string {
+function renderCatalogHeader(theme: ThemeId, hasActiveSession: boolean): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <h2 class="tool-header__title">Neurotone</h2>
           <div class="tool-header__controls">
+            ${hasActiveSession ? '<button class="ghost-button" data-action="return-to-session" type="button">Back to session</button>' : ''}
             ${renderThemeToggle(theme)}
           </div>
         </div>
@@ -2272,6 +2273,10 @@ function renderCatalogWorkspace(
 
       <h3 class="catalog-section__heading">Curated</h3>
       <div class="catalog-grid">
+        <button class="catalog-card catalog-card--create-new" data-action="create-new-session" type="button">
+          <h3 class="catalog-card__title">+ Create new session</h3>
+          <p class="catalog-card__description">Start from scratch with the composer</p>
+        </button>
         ${catalog
           .map(
             (entry) => `
@@ -5404,7 +5409,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (playbackMode === 'catalog') {
-      headerShell.innerHTML = renderCatalogHeader(currentTheme);
+      headerShell.innerHTML = renderCatalogHeader(currentTheme, !isFirstVisit);
       workspaceShell.innerHTML = renderCatalogWorkspace(savedSessions);
       syncConfirmDialog();
       return;
@@ -6402,6 +6407,27 @@ export function createApp(root: HTMLElement): void {
       pendingConfirmCatalogId = entry.id;
       pendingConfirmSavedId = null;
       syncConfirmDialog();
+      return;
+    }
+
+    if (action === 'create-new-session') {
+      sequencer.stop();
+      const nextSession = createSessionDefinition();
+      activeCatalogId = null;
+      activeSavedId = null;
+      playbackMode = 'timeline';
+      replaceSession(nextSession, { rerender: false });
+      ensureTimelineUI({ tab: 'timeline', composerModalOpen: true }, nextSession);
+      document.body.classList.add('modal-open');
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (action === 'return-to-session') {
+      playbackMode = 'visualizer';
+      renderLayout();
+      persistAppState();
       return;
     }
 

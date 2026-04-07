@@ -3292,6 +3292,17 @@ body.modal-open {
   box-shadow: 0 4px 16px rgba(39, 27, 18, 0.08);
 }
 
+.catalog-card--create-new {
+  border-style: dashed;
+  border-color: rgba(157, 94, 47, 0.25);
+  background: rgba(157, 94, 47, 0.03);
+}
+
+.catalog-card--create-new:hover {
+  border-color: rgba(157, 94, 47, 0.45);
+  background: rgba(157, 94, 47, 0.06);
+}
+
 .catalog-card--saved {
   display: flex;
   align-items: stretch;
@@ -3586,6 +3597,17 @@ body.modal-open {
 [data-theme="dark"] .catalog-card:hover {
   border-color: var(--accent);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .catalog-card--create-new {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
+}
+
+[data-theme="dark"] .catalog-card--create-new:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 [data-theme="dark"] .catalog-card__body:hover {
