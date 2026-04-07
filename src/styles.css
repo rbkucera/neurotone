@@ -3756,6 +3756,24 @@ body.modal-open {
   border-color: var(--border);
 }
 
+/* Metric cards (analysis mode) */
+[data-theme="dark"] .metric {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+/* Lane card (carrier editor) */
+[data-theme="dark"] .lane-card {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+/* Manual editor panel */
+[data-theme="dark"] .panel--manual-editor {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .composer-modal__header {
   border-bottom-color: var(--border);
 }
