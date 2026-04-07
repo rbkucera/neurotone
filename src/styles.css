@@ -3740,6 +3740,27 @@ body.modal-open {
   color: var(--text-soft);
 }
 
+/* Composer modal internals */
+[data-theme="dark"] .compose-panel,
+[data-theme="dark"] .compose-card {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .compose-card--summary {
+  border-style: dashed;
+}
+
+[data-theme="dark"] .composer-modal__header {
+  border-bottom-color: var(--border);
+}
+
+[data-theme="dark"] .composer-grid textarea {
+  background: var(--surface-inset);
+  border-color: var(--border);
+  color: var(--text-strong);
+}
+
 [data-theme="dark"] .layer-card__eyebrow {
   color: var(--text-soft);
 }
