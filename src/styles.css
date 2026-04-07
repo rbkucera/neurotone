@@ -3744,6 +3744,45 @@ body.modal-open {
   color: var(--text-soft);
 }
 
+/* Segment chip action buttons (J, +, D, -) */
+[data-theme="dark"] .timeline-chip-actions {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .timeline-chip-action {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+}
+
+[data-theme="dark"] .timeline-chip-action:hover {
+  background: var(--accent-muted);
+  color: var(--accent-strong);
+}
+
+/* Lane mini-timelines in clips and override rows */
+[data-theme="dark"] .segment-lane__line,
+[data-theme="dark"] .segment-override-row__line {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .segment-lane__keyframe {
+  border-color: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .segment-override-row__dot {
+  border-color: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Selected override lane container */
+[data-theme="dark"] .segment-override-row.is-selected .segment-override-row__button {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
