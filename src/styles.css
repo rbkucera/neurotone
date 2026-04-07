@@ -3774,6 +3774,11 @@ body.modal-open {
   border-color: var(--border);
 }
 
+[data-theme="dark"] .manual-editor__section {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .composer-modal__header {
   border-bottom-color: var(--border);
 }
