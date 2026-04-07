@@ -6418,7 +6418,6 @@ export function createApp(root: HTMLElement): void {
       playbackMode = 'timeline';
       replaceSession(nextSession, { rerender: false });
       ensureTimelineUI({ tab: 'timeline', composerModalOpen: true }, nextSession);
-      document.body.classList.add('modal-open');
       renderLayout();
       persistAppState();
       return;
