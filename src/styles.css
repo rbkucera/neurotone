@@ -3378,6 +3378,7 @@ body.modal-open {
 
 .session-switcher {
   position: relative;
+  z-index: 10;
   min-width: 0;
 }
 
