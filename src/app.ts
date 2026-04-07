@@ -3409,6 +3409,7 @@ export function createApp(root: HTMLElement): void {
         ? loadStoredStateViewHint()
         : null;
   const isFirstVisit = hashRestored === null && storedRestored === null;
+  let hasLoadedSession = !isFirstVisit;
   let playbackMode: AppViewMode =
     isFirstVisit
       ? 'catalog'
@@ -3824,6 +3825,7 @@ export function createApp(root: HTMLElement): void {
     );
     activeCatalogId = entry.id;
     activeSavedId = null;
+    hasLoadedSession = true;
     playbackMode = 'visualizer';
     replaceSession(nextSession, { rerender: false });
     renderLayout();
@@ -3839,6 +3841,7 @@ export function createApp(root: HTMLElement): void {
     const nextSession = createSessionDefinition(saved.session);
     activeCatalogId = null;
     activeSavedId = saved.id;
+    hasLoadedSession = true;
     playbackMode = 'visualizer';
     replaceSession(nextSession, { rerender: false });
     renderLayout();
@@ -5409,7 +5412,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (playbackMode === 'catalog') {
-      headerShell.innerHTML = renderCatalogHeader(currentTheme, !isFirstVisit);
+      headerShell.innerHTML = renderCatalogHeader(currentTheme, hasLoadedSession);
       workspaceShell.innerHTML = renderCatalogWorkspace(savedSessions);
       syncConfirmDialog();
       return;
@@ -6415,6 +6418,7 @@ export function createApp(root: HTMLElement): void {
       const nextSession = createSessionDefinition();
       activeCatalogId = null;
       activeSavedId = null;
+      hasLoadedSession = true;
       playbackMode = 'timeline';
       replaceSession(nextSession, { rerender: false });
       ensureTimelineUI({ tab: 'timeline', composerModalOpen: true }, nextSession);
