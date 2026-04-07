@@ -834,6 +834,7 @@ input[type="range"] {
 .panel--tool-header-timeline {
   position: relative;
   z-index: 5;
+  overflow: visible;
   padding: 6px 10px;
   border-radius: 14px;
 }
