@@ -3751,6 +3751,11 @@ body.modal-open {
   border-style: dashed;
 }
 
+[data-theme="dark"] .composer-note {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .composer-modal__header {
   border-bottom-color: var(--border);
 }
