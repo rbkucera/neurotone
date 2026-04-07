@@ -3761,6 +3761,12 @@ body.modal-open {
   color: var(--text-strong);
 }
 
+/* Noise bed toggle pill */
+[data-theme="dark"] .support-compact__toggle {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .layer-card__eyebrow {
   color: var(--text-soft);
 }
