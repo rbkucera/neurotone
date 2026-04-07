@@ -193,6 +193,44 @@
   color: var(--text-soft);
 }
 
+[data-theme="dark"] .transport-row {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .transport-row__label {
+  color: var(--text-soft);
+}
+
+[data-theme="dark"] .select-field select,
+[data-theme="dark"] .numeric-field input {
+  background: var(--surface-inset);
+  border-color: var(--border);
+  color: var(--text-strong);
+}
+
+[data-theme="dark"] .visualizer-renderer-status {
+  background: var(--surface-inset);
+  border-color: var(--border);
+  color: var(--text-soft);
+}
+
+[data-theme="dark"] .visualizer-renderer-status[data-mode='compatibility'] {
+  border-color: rgba(255, 100, 80, 0.3);
+  background: rgba(255, 80, 60, 0.08);
+  color: #ff8a7a;
+}
+
+[data-theme="dark"] .visualizer-band-led.is-dominant {
+  background: var(--accent-muted);
+  color: var(--accent-strong);
+}
+
+[data-theme="dark"] .layer-card__eyebrow {
+  color: var(--text-soft);
+}
+
 /* Visualizer bands pop more on dark backgrounds */
 [data-theme="dark"] .visualizer-band-led {
   opacity: 0.95;
