@@ -2193,7 +2193,6 @@ function renderAnalysisHeader(
       </div>
       <div data-role="headphone-notice"></div>
       <div data-role="high-volume-warning"></div>
-      <div data-role="confirm-dialog-container"></div>
     </section>
   `;
 }
@@ -2230,7 +2229,6 @@ function renderTimelineHeader(
       </div>
       <div data-role="headphone-notice"></div>
       <div data-role="high-volume-warning"></div>
-      <div data-role="confirm-dialog-container"></div>
     </section>
   `;
 }
@@ -3455,6 +3453,7 @@ export function createApp(root: HTMLElement): void {
       <div data-role="header-shell"></div>
       <div data-role="workspace-shell"></div>
     </main>
+    <div data-role="confirm-dialog-container"></div>
   `;
 
   const headerShell = root.querySelector<HTMLElement>('[data-role="header-shell"]');

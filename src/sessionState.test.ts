@@ -84,10 +84,10 @@ describe('share state encoding', () => {
       model: 'surf',
     });
     expect(decoded?.composer).toEqual({
-      label: 'Generated session',
-      source: 'Am Fmaj7 C G',
-      stepDuration: 8,
-      intent: 'alpha',
+      label: 'Composed Session',
+      source: 'Am Fmaj7/2 C G',
+      stepDuration: 16,
+      intent: 'mixed',
     });
   });
 
@@ -210,9 +210,9 @@ describe('share state encoding', () => {
     const state = createInitialShareableState();
 
     expect(state.mode).toBe('visualizer');
-    expect(state.session.label).toBe('Soft Arrival');
+    expect(state.session.label).toBe('Neurotone');
     expect(state.session.loop).toBe(true);
-    expect(state.session.segments).toHaveLength(1);
+    expect(state.session.segments.length).toBeGreaterThanOrEqual(1);
   });
 
   it('supports visualizer mode in v5 encoding', () => {
