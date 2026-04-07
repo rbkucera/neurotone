@@ -3783,6 +3783,11 @@ body.modal-open {
   border-style: dashed;
 }
 
+[data-theme="dark"] .session-summary-strip {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .composer-note {
   background: var(--surface-raised);
   border-color: var(--border);
