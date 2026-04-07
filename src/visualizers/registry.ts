@@ -26,6 +26,20 @@ const BAND_COLOR: Record<(typeof BAND_SEQUENCE)[number], number> = {
 
 const BAND_SEQUENCE = ['delta', 'theta', 'alpha', 'beta', 'gamma'] as const;
 
+interface VisualizerPalette {
+  backdrop: number;
+  backdropAlpha: number;
+  haloDock: number;
+  haloDockAlpha: number;
+}
+
+function getVisualizerPalette(): VisualizerPalette {
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  return isDark
+    ? { backdrop: 0x1a1a1e, backdropAlpha: 0.96, haloDock: 0xffffff, haloDockAlpha: 0.05 }
+    : { backdrop: 0xfaf6ef, backdropAlpha: 0.86, haloDock: 0xffffff, haloDockAlpha: 0.12 };
+}
+
 export interface VisualizerFrameInput {
   engineState: EngineSnapshot;
   playbackState: SessionPlaybackState;
@@ -74,9 +88,10 @@ function drawBandHalo(
       : 0;
 
   graphics.clear();
+  const haloPal = getVisualizerPalette();
   graphics
     .roundRect(dockX, dockY, dockWidth, dockHeight, dockRadius)
-    .fill({ color: 0xffffff, alpha: 0.12 + intensity * 0.05 });
+    .fill({ color: haloPal.haloDock, alpha: haloPal.haloDockAlpha + intensity * 0.05 });
   graphics
     .roundRect(
       dockX + 0.5,
@@ -217,8 +232,9 @@ function createEnvelopeFieldScene(): (root: Container) => VisualizerScene {
         }
       }
 
+      const pal = getVisualizerPalette();
       background.clear();
-      background.rect(0, 0, width, height).fill({ color: 0xfaf6ef, alpha: 0.84 });
+      background.rect(0, 0, width, height).fill({ color: pal.backdrop, alpha: pal.backdropAlpha });
 
       const centerY = height * 0.52;
       const baseAmplitude = height * (0.24 + intensity * 0.12);
@@ -339,8 +355,9 @@ function createStereoDriftRibbonsScene(): (root: Container) => VisualizerScene {
         }
       }
 
+      const pal = getVisualizerPalette();
       backdrop.clear();
-      backdrop.rect(0, 0, width, height).fill({ color: 0xfaf6ef, alpha: 0.86 });
+      backdrop.rect(0, 0, width, height).fill({ color: pal.backdrop, alpha: pal.backdropAlpha });
 
       const drift = Math.sin(frame.nowMs / 7800) * height * 0.024;
       const spread = height * (0.34 + intensity * 0.1);
@@ -461,8 +478,9 @@ function createSpectralAuroraScene(): (root: Container) => VisualizerScene {
         }
       }
 
+      const pal = getVisualizerPalette();
       backdrop.clear();
-      backdrop.rect(0, 0, width, height).fill({ color: 0xf9f5ee, alpha: 0.9 });
+      backdrop.rect(0, 0, width, height).fill({ color: pal.backdrop, alpha: pal.backdropAlpha });
 
       ribbons.clear();
       accents.clear();

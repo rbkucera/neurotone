@@ -11,14 +11,18 @@ import {
   createSessionSegment,
   sanitizeSessionSoundState,
 } from './sequencer/utils';
-import defaultSessionData from './defaultSession.json';
+import defaultSessionData from './catalog/sessions/soft-arrival.json';
 
 export const SESSION_STORAGE_KEY = 'neurotone.session.v4';
 export const HEADPHONE_NOTICE_KEY = 'neurotone.headphone-notice.v1';
 const MASTER_VOLUME_KEY = 'neurotone.master-volume.v1';
 const HIGH_VOLUME_WARNING_KEY = 'neurotone.high-volume-warning.v1';
+const SAVED_SESSIONS_KEY = 'neurotone.saved-sessions.v1';
+const THEME_KEY = 'neurotone.theme.v1';
 
 export type PlaybackMode = 'timeline' | 'visualizer';
+
+export type ThemeId = 'light' | 'dark';
 
 export interface ComposerDraft {
   label: string;
@@ -495,4 +499,103 @@ export function createInitialShareableState(): ShareableState {
     mode: 'visualizer',
     session,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Saved sessions (localStorage)
+// ---------------------------------------------------------------------------
+
+export interface SavedSession {
+  id: string;
+  label: string;
+  savedAt: string;
+  session: SessionDefinition;
+}
+
+export function loadSavedSessions(): SavedSession[] {
+  try {
+    const raw = window.localStorage.getItem(SAVED_SESSIONS_KEY);
+    if (!raw) {
+      return [];
+    }
+    return JSON.parse(raw) as SavedSession[];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedSessions(sessions: SavedSession[]): void {
+  window.localStorage.setItem(SAVED_SESSIONS_KEY, JSON.stringify(sessions));
+}
+
+export function saveSessionToLibrary(session: SessionDefinition): SavedSession {
+  const sessions = loadSavedSessions();
+  const saved: SavedSession = {
+    id: `saved-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    label: session.label || 'Untitled session',
+    savedAt: new Date().toISOString(),
+    session: createSessionDefinition(session),
+  };
+  sessions.unshift(saved);
+  persistSavedSessions(sessions);
+  return saved;
+}
+
+export function updateSavedSession(
+  id: string,
+  session: SessionDefinition,
+): void {
+  const sessions = loadSavedSessions();
+  const index = sessions.findIndex((s) => s.id === id);
+  if (index !== -1) {
+    sessions[index] = {
+      ...sessions[index],
+      label: session.label || sessions[index].label,
+      savedAt: new Date().toISOString(),
+      session: createSessionDefinition(session),
+    };
+    persistSavedSessions(sessions);
+  }
+}
+
+export function deleteSavedSession(id: string): void {
+  const sessions = loadSavedSessions().filter((s) => s.id !== id);
+  persistSavedSessions(sessions);
+}
+
+export function exportSavedSessions(): string {
+  return JSON.stringify(loadSavedSessions(), null, 2);
+}
+
+export function importSavedSessions(json: string): number {
+  const incoming = JSON.parse(json) as SavedSession[];
+  if (!Array.isArray(incoming)) {
+    return 0;
+  }
+  const existing = loadSavedSessions();
+  const existingIds = new Set(existing.map((s) => s.id));
+  const newSessions = incoming.filter((s) => s.id && !existingIds.has(s.id));
+  if (newSessions.length === 0) {
+    return 0;
+  }
+  persistSavedSessions([...newSessions, ...existing]);
+  return newSessions.length;
+}
+
+export function loadTheme(): ThemeId | null {
+  try {
+    const raw = window.localStorage.getItem(THEME_KEY);
+    if (raw === 'light' || raw === 'dark') return raw;
+  } catch {
+    // Fails silently for blocked storage.
+  }
+  return null;
+}
+
+export function saveTheme(theme: ThemeId): void {
+  try {
+    window.localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Fails silently for blocked storage or quota issues.
+  }
 }

@@ -60,10 +60,21 @@ import {
   markHighVolumeWarningSeen,
   saveMasterVolume,
   saveStoredState,
+  loadSavedSessions,
+  saveSessionToLibrary,
+  updateSavedSession,
+  deleteSavedSession,
+  exportSavedSessions,
+  importSavedSessions,
+  loadTheme,
+  saveTheme,
   type ComposerDraft,
   type PlaybackMode,
+  type SavedSession,
+  type ThemeId,
   type ShareableState,
 } from './sessionState';
+import { catalog, getCatalogEntry, type CatalogEntry } from './catalog';
 import {
   hasExistingTimeline,
   loadTimelineWorkspaceUIState,
@@ -141,7 +152,7 @@ const ADVANCED_LAYOUT = {
 };
 
 type TimelineDragInsertPosition = 'before' | 'after';
-type AppViewMode = PlaybackMode | 'analysis';
+type AppViewMode = PlaybackMode | 'analysis' | 'catalog';
 type VisualizerRendererMode = 'pixi-webgl' | 'compatibility';
 
 function escapeHtml(value: string): string {
@@ -2138,7 +2149,13 @@ function renderManualDiagnosticsMarkup(
   `;
 }
 
-function renderHeaderVolumeSlider(masterVolume: number): string {
+function renderThemeToggle(theme: ThemeId): string {
+  const icon = theme === 'dark' ? '&#x2600;' : '&#x263E;';
+  const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  return `<button class="theme-toggle" data-action="cycle-theme" type="button" aria-label="${label}" title="${label}">${icon}</button>`;
+}
+
+function renderHeaderVolumeSlider(masterVolume: number, theme: ThemeId): string {
   return `
     <label class="tool-header__volume">
       <input
@@ -2151,6 +2168,7 @@ function renderHeaderVolumeSlider(masterVolume: number): string {
       />
       <output data-role="master-output">${formatPercent(masterVolume)}</output>
     </label>
+    ${renderThemeToggle(theme)}
   `;
 }
 
@@ -2158,6 +2176,7 @@ function renderAnalysisHeader(
   session: SessionDefinition,
   shareButtonLabel: string,
   masterVolume: number,
+  theme: ThemeId,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
@@ -2166,14 +2185,20 @@ function renderAnalysisHeader(
       </button>
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
-          <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
+          <div class="session-switcher" data-role="session-switcher">
+            <button class="session-switcher__trigger" data-action="toggle-session-menu" type="button">
+              <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
+              <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
+            </button>
+            <div class="session-menu" data-role="session-menu" hidden></div>
+          </div>
 
           <div class="tool-header__controls">
             <button class="transport transport--compact" data-action="return-to-timeline" type="button">
               Return to timeline
             </button>
 
-            ${renderHeaderVolumeSlider(masterVolume)}
+            ${renderHeaderVolumeSlider(masterVolume, theme)}
           </div>
         </div>
       </div>
@@ -2188,6 +2213,7 @@ function renderTimelineHeader(
   shareButtonLabel: string,
   playbackMode: PlaybackMode,
   masterVolume: number,
+  theme: ThemeId,
 ): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
@@ -2196,20 +2222,125 @@ function renderTimelineHeader(
       </button>
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
-          <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
+          <div class="session-switcher" data-role="session-switcher">
+            <button class="session-switcher__trigger" data-action="toggle-session-menu" type="button">
+              <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
+              <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
+            </button>
+            <div class="session-menu" data-role="session-menu" hidden></div>
+          </div>
 
           <div class="tool-header__controls">
             <label class="tool-header__mode">
               ${renderPlaybackModeToggle(playbackMode)}
             </label>
 
-            ${renderHeaderVolumeSlider(masterVolume)}
+            ${renderHeaderVolumeSlider(masterVolume, theme)}
           </div>
         </div>
       </div>
       <div data-role="headphone-notice"></div>
       <div data-role="high-volume-warning"></div>
     </section>
+  `;
+}
+
+function renderCatalogHeader(theme: ThemeId): string {
+  return `
+    <section class="panel panel--tool-header panel--tool-header-timeline">
+      <div class="tool-header tool-header--timeline">
+        <div class="tool-header__row">
+          <h2 class="tool-header__title">Neurotone</h2>
+          <div class="tool-header__controls">
+            ${renderThemeToggle(theme)}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderCatalogWorkspace(
+  savedSessions: SavedSession[],
+): string {
+  return `
+    <section class="panel panel--workspace panel--catalog">
+      <div class="catalog-header">
+        <h2>Sessions</h2>
+        <p class="catalog-header__subtitle">Choose a session to begin, or load a saved session.</p>
+      </div>
+
+      <h3 class="catalog-section__heading">Curated</h3>
+      <div class="catalog-grid">
+        ${catalog
+          .map(
+            (entry) => `
+          <button class="catalog-card" data-action="select-catalog-entry" data-catalog-id="${entry.id}" type="button">
+            <h3 class="catalog-card__title">${escapeHtml(entry.label)}</h3>
+            <p class="catalog-card__description">${escapeHtml(entry.description)}</p>
+          </button>
+        `,
+          )
+          .join('')}
+      </div>
+
+      ${
+        savedSessions.length > 0
+          ? `
+        <h3 class="catalog-section__heading">Saved</h3>
+        <div class="catalog-grid">
+          ${savedSessions
+            .map(
+              (saved) => `
+            <div class="catalog-card catalog-card--saved">
+              <button class="catalog-card__body" data-action="select-saved-session" data-saved-id="${saved.id}" type="button">
+                <h3 class="catalog-card__title">${escapeHtml(saved.label)}</h3>
+                <p class="catalog-card__meta">Saved ${escapeHtml(new Date(saved.savedAt).toLocaleDateString())}</p>
+              </button>
+              <button class="catalog-card__delete" data-action="delete-saved-session" data-saved-id="${saved.id}" type="button"
+                aria-label="Delete saved session">&times;</button>
+            </div>
+          `,
+            )
+            .join('')}
+        </div>
+        <div class="catalog-actions">
+          <button class="ghost-button ghost-button--compact" data-action="export-saved-sessions" type="button">Export saved sessions</button>
+          <label class="ghost-button ghost-button--compact">
+            Import
+            <input data-action="import-saved-sessions" type="file" accept=".json" hidden />
+          </label>
+        </div>
+      `
+          : ''
+      }
+    </section>
+  `;
+}
+
+function renderConfirmLoadDialog(
+  label: string,
+  catalogId: string | null,
+  savedId: string | null,
+): string {
+  const actionAttr = catalogId
+    ? `data-action="confirm-load-catalog" data-catalog-id="${catalogId}"`
+    : `data-action="confirm-load-saved" data-saved-id="${savedId}"`;
+
+  return `
+    <div class="confirm-dialog" data-role="confirm-dialog">
+      <div class="confirm-dialog__backdrop" data-action="close-confirm-dialog"></div>
+      <div class="confirm-dialog__body" role="alertdialog" aria-modal="true" aria-label="Load session" tabindex="-1">
+        <h3>Load &ldquo;${escapeHtml(label)}&rdquo;?</h3>
+        <p>Your current session will be replaced.</p>
+        <div class="confirm-dialog__actions">
+          <button class="ghost-button" data-action="close-confirm-dialog" type="button">Cancel</button>
+          <button class="transport transport--compact" ${actionAttr} type="button">
+            Load session
+          </button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -3272,14 +3403,26 @@ export function createApp(root: HTMLElement): void {
       : storedRestored !== null
         ? loadStoredStateViewHint()
         : null;
+  const isFirstVisit = hashRestored === null && storedRestored === null;
   let playbackMode: AppViewMode =
-    initialViewHint === 'analysis' ? 'analysis' : restored.mode;
+    isFirstVisit
+      ? 'catalog'
+      : initialViewHint === 'analysis'
+        ? 'analysis'
+        : restored.mode;
   let session: SessionDefinition = restored.session;
   let composerDraft: ComposerDraft = restored.composer;
   let timelineUI = loadTimelineWorkspaceUIState(session);
   let manualDiagnosticsTab: ManualDiagnosticsTab = 'beat-map';
   let manualDiagnosticsOpen = false;
   let activeVisualizerId = DEFAULT_VISUALIZER_ID;
+  let activeCatalogId: string | null = isFirstVisit ? null : (restored.presetId ?? null);
+  let activeSavedId: string | null = null;
+  let savedSessions: SavedSession[] = loadSavedSessions();
+  let sessionMenuOpen = false;
+  let pendingConfirmLabel: string | null = null;
+  let pendingConfirmCatalogId: string | null = null;
+  let pendingConfirmSavedId: string | null = null;
   let visualizerIntensity = 0.62;
   let lastVisualizerFrameMs: number | null = null;
   let visualizerPixiRuntime: PixiVisualizerRuntime | null = null;
@@ -3319,12 +3462,36 @@ export function createApp(root: HTMLElement): void {
   let animationFrameId: number | null = null;
   let engineState: EngineSnapshot = engine.getSnapshot();
   let composerExplanation: string[] = [];
+  let currentTheme: ThemeId =
+    (document.documentElement.dataset.theme as ThemeId) || 'light';
+
+  const applyTheme = (theme: ThemeId): void => {
+    currentTheme = theme;
+    document.documentElement.dataset.theme = theme;
+    saveTheme(theme);
+  };
+
+  const cycleTheme = (): void => {
+    applyTheme(currentTheme === 'light' ? 'dark' : 'light');
+  };
+
+  // Follow system preference changes when no manual override exists
+  const systemDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  if (loadTheme() === null) {
+    systemDarkQuery.addEventListener('change', (e) => {
+      if (loadTheme() === null) {
+        applyTheme(e.matches ? 'dark' : 'light');
+        renderLayout();
+      }
+    });
+  }
 
   root.innerHTML = `
     <main class="shell">
       <div data-role="header-shell"></div>
       <div data-role="workspace-shell"></div>
     </main>
+    <div data-role="confirm-dialog-container"></div>
   `;
 
   const headerShell = root.querySelector<HTMLElement>('[data-role="header-shell"]');
@@ -3404,7 +3571,9 @@ export function createApp(root: HTMLElement): void {
     }));
 
   const shareablePlaybackMode = (): PlaybackMode =>
-    playbackMode === 'analysis' ? 'timeline' : playbackMode;
+    playbackMode === 'analysis' || playbackMode === 'catalog'
+      ? 'timeline'
+      : playbackMode;
 
   const currentShareableState = (): ShareableState => ({
     presetId: null,
@@ -3557,6 +3726,118 @@ export function createApp(root: HTMLElement): void {
         `
         : '';
     }
+  };
+
+  const syncSessionMenu = (): void => {
+    const menu = root.querySelector<HTMLElement>('[data-role="session-menu"]');
+    if (!menu) {
+      return;
+    }
+    if (!sessionMenuOpen) {
+      menu.hidden = true;
+      menu.innerHTML = '';
+      return;
+    }
+    menu.hidden = false;
+    menu.innerHTML = `
+      ${catalog
+        .map(
+          (entry) => `
+        <button class="session-menu__item ${entry.id === activeCatalogId ? 'is-active' : ''}"
+          data-action="select-catalog-entry" data-catalog-id="${entry.id}" type="button">
+          <strong>${escapeHtml(entry.label)}</strong>
+        </button>
+      `,
+        )
+        .join('')}
+      ${
+        savedSessions.length > 0
+          ? `
+        <hr class="session-menu__divider" />
+        ${savedSessions
+          .slice(0, 5)
+          .map(
+            (saved) => `
+          <button class="session-menu__item ${saved.id === activeSavedId ? 'is-active' : ''}"
+            data-action="select-saved-session" data-saved-id="${saved.id}" type="button">
+            <strong>${escapeHtml(saved.label)}</strong>
+          </button>
+        `,
+          )
+          .join('')}
+      `
+          : ''
+      }
+      <hr class="session-menu__divider" />
+      <button class="session-menu__item session-menu__item--action" data-action="save-current-session" type="button">
+        Save current session
+      </button>
+      <button class="session-menu__item session-menu__item--action" data-action="show-catalog" type="button">
+        Browse all sessions
+      </button>
+    `;
+  };
+
+  const syncConfirmDialog = (): void => {
+    const container = root.querySelector<HTMLElement>('[data-role="confirm-dialog-container"]');
+    if (!container) {
+      return;
+    }
+    if (!pendingConfirmLabel) {
+      container.innerHTML = '';
+      return;
+    }
+    container.innerHTML = renderConfirmLoadDialog(
+      pendingConfirmLabel,
+      pendingConfirmCatalogId,
+      pendingConfirmSavedId,
+    );
+  };
+
+  const closeSessionMenu = (): void => {
+    if (sessionMenuOpen) {
+      sessionMenuOpen = false;
+      syncSessionMenu();
+    }
+  };
+
+  const clearConfirmDialog = (): void => {
+    pendingConfirmLabel = null;
+    pendingConfirmCatalogId = null;
+    pendingConfirmSavedId = null;
+    syncConfirmDialog();
+  };
+
+  const loadCatalogSession = (catalogId: string): void => {
+    const entry = getCatalogEntry(catalogId);
+    if (!entry) {
+      return;
+    }
+    sequencer.stop();
+    const nextSession = createSessionDefinition(
+      entry.session as Partial<SessionDefinition>,
+    );
+    activeCatalogId = entry.id;
+    activeSavedId = null;
+    playbackMode = 'visualizer';
+    replaceSession(nextSession, { rerender: false });
+    renderLayout();
+    persistAppState();
+  };
+
+  const loadSavedSessionById = (id: string): void => {
+    const saved = savedSessions.find((s) => s.id === id);
+    if (!saved) {
+      return;
+    }
+    sequencer.stop();
+    const nextSession = createSessionDefinition(saved.session);
+    activeCatalogId = null;
+    activeSavedId = saved.id;
+    playbackMode = 'visualizer';
+    replaceSession(nextSession, { rerender: false });
+    renderLayout();
+    persistAppState();
   };
 
   const syncSegmentMeta = (): void => {
@@ -5122,10 +5403,17 @@ export function createApp(root: HTMLElement): void {
       shell.dataset.timelineTab = playbackMode;
     }
 
+    if (playbackMode === 'catalog') {
+      headerShell.innerHTML = renderCatalogHeader(currentTheme);
+      workspaceShell.innerHTML = renderCatalogWorkspace(savedSessions);
+      syncConfirmDialog();
+      return;
+    }
+
     headerShell.innerHTML =
       playbackMode === 'analysis'
-        ? renderAnalysisHeader(session, shareButtonLabel, masterVolume)
-        : renderTimelineHeader(session, shareButtonLabel, playbackMode, masterVolume);
+        ? renderAnalysisHeader(session, shareButtonLabel, masterVolume, currentTheme)
+        : renderTimelineHeader(session, shareButtonLabel, playbackMode, masterVolume, currentTheme);
 
     workspaceShell.innerHTML =
       playbackMode === 'timeline'
@@ -5149,6 +5437,8 @@ export function createApp(root: HTMLElement): void {
             );
 
     syncHeader();
+    syncSessionMenu();
+    syncConfirmDialog();
     syncComposerOutput();
     syncGeneratedSummary();
     syncSegmentMeta();
@@ -5752,6 +6042,26 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
+    // File import for saved sessions
+    if (target instanceof HTMLInputElement && target.dataset.action === 'import-saved-sessions' && target.files?.[0]) {
+      const file = target.files[0];
+      try {
+        const json = await file.text();
+        const count = importSavedSessions(json);
+        savedSessions = loadSavedSessions();
+        if (count > 0) {
+          showToast(`Imported ${count} session${count === 1 ? '' : 's'}`);
+        } else {
+          showToast('No new sessions to import');
+        }
+        renderLayout();
+      } catch {
+        showToast('Invalid session file');
+      }
+      target.value = '';
+      return;
+    }
+
     const inputKey = target.dataset.input;
     if (!inputKey) {
       return;
@@ -5991,6 +6301,11 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
+    // Close session menu on outside click
+    if (sessionMenuOpen && !target.closest('[data-role="session-switcher"]')) {
+      closeSessionMenu();
+    }
+
     const actionTarget = target.closest<HTMLElement>('[data-action]');
     if (!actionTarget) {
       if (
@@ -6014,6 +6329,12 @@ export function createApp(root: HTMLElement): void {
 
     const action = actionTarget.dataset.action;
     if (!action) {
+      return;
+    }
+
+    if (action === 'cycle-theme') {
+      cycleTheme();
+      renderLayout();
       return;
     }
 
@@ -6055,6 +6376,116 @@ export function createApp(root: HTMLElement): void {
       highVolumeWarningDismissed = true;
       markHighVolumeWarningSeen();
       syncHighVolumeWarning();
+      return;
+    }
+
+    // --- Catalog / session-switcher actions ---
+
+    if (action === 'toggle-session-menu') {
+      sessionMenuOpen = !sessionMenuOpen;
+      syncSessionMenu();
+      return;
+    }
+
+    if (action === 'select-catalog-entry') {
+      const catalogId = actionTarget.dataset.catalogId;
+      if (!catalogId) return;
+      closeSessionMenu();
+      if (playbackMode === 'catalog') {
+        // From landing screen — load directly, no confirm needed
+        loadCatalogSession(catalogId);
+        return;
+      }
+      const entry = getCatalogEntry(catalogId);
+      if (!entry) return;
+      pendingConfirmLabel = entry.label;
+      pendingConfirmCatalogId = entry.id;
+      pendingConfirmSavedId = null;
+      syncConfirmDialog();
+      return;
+    }
+
+    if (action === 'select-saved-session') {
+      const savedId = actionTarget.dataset.savedId;
+      if (!savedId) return;
+      closeSessionMenu();
+      if (playbackMode === 'catalog') {
+        loadSavedSessionById(savedId);
+        return;
+      }
+      const saved = savedSessions.find((s) => s.id === savedId);
+      if (!saved) return;
+      pendingConfirmLabel = saved.label;
+      pendingConfirmCatalogId = null;
+      pendingConfirmSavedId = saved.id;
+      syncConfirmDialog();
+      return;
+    }
+
+    if (action === 'save-current-session') {
+      closeSessionMenu();
+      if (activeSavedId) {
+        updateSavedSession(activeSavedId, session);
+        showToast('Session updated');
+      } else {
+        const saved = saveSessionToLibrary(session);
+        activeSavedId = saved.id;
+        activeCatalogId = null;
+        showToast('Session saved');
+      }
+      savedSessions = loadSavedSessions();
+      return;
+    }
+
+    if (action === 'show-catalog') {
+      closeSessionMenu();
+      playbackMode = 'catalog';
+      renderLayout();
+      return;
+    }
+
+    if (action === 'delete-saved-session') {
+      const savedId = actionTarget.dataset.savedId;
+      if (!savedId) return;
+      deleteSavedSession(savedId);
+      savedSessions = loadSavedSessions();
+      if (activeSavedId === savedId) {
+        activeSavedId = null;
+      }
+      renderLayout();
+      return;
+    }
+
+    if (action === 'export-saved-sessions') {
+      const json = exportSavedSessions();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'neurotone-sessions.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    if (action === 'confirm-load-catalog') {
+      const catalogId = actionTarget.dataset.catalogId;
+      if (!catalogId) return;
+      clearConfirmDialog();
+      loadCatalogSession(catalogId);
+      return;
+    }
+
+    if (action === 'confirm-load-saved') {
+      const savedId = actionTarget.dataset.savedId;
+      if (!savedId) return;
+      clearConfirmDialog();
+      loadSavedSessionById(savedId);
+      return;
+    }
+
+    if (action === 'close-confirm-dialog') {
+      clearConfirmDialog();
       return;
     }
 
@@ -6969,8 +7400,16 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
-    // Escape: close modal or stop playback
+    // Escape: close session menu / confirm dialog / modal / stop playback
     if (event.key === 'Escape') {
+      if (sessionMenuOpen) {
+        closeSessionMenu();
+        return;
+      }
+      if (pendingConfirmLabel) {
+        clearConfirmDialog();
+        return;
+      }
       if (playbackMode === 'timeline' && timelineUI.composerModalOpen) {
         ensureTimelineUI({ composerModalOpen: false });
         document.body.classList.remove('modal-open');
