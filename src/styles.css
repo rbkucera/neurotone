@@ -3388,7 +3388,6 @@ body.modal-open {
   padding: 4px 10px 4px 8px;
   border: 1px solid rgba(75, 57, 40, 0.15);
   background: rgba(255, 255, 255, 0.45);
-  cursor: pointer;
   min-width: 0;
   max-width: 100%;
   border-radius: 8px;
@@ -3402,7 +3401,32 @@ body.modal-open {
 }
 
 .session-switcher__trigger .tool-header__title {
-  pointer-events: none;
+  cursor: text;
+}
+
+.session-switcher__chevron-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 0 2px 2px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+
+.session-switcher__input {
+  font: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  color: var(--text-strong);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--accent);
+  outline: none;
+  padding: 0;
+  margin: 0;
+  min-width: 80px;
+  max-width: 100%;
 }
 
 .session-switcher__chevron {
@@ -3586,6 +3610,11 @@ body.modal-open {
 [data-theme="dark"] .session-switcher__trigger:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .session-switcher__input {
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
 }
 
 [data-theme="dark"] .catalog-card,

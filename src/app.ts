@@ -164,6 +164,14 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function sanitizeSessionLabel(raw: string): string {
+  return raw
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .trim()
+    .slice(0, 60)
+    || 'Untitled session';
+}
+
 function formatHz(value: number): string {
   return `${value.toFixed(value < 10 ? 1 : 2).replace(/\.00$/, '')} Hz`;
 }
@@ -324,7 +332,7 @@ function renderSegmentMetaControls(segment: SessionSegment): string {
     <div class="segment-compact">
       <label class="numeric-field segment-compact__label">
         <span>Segment label</span>
-        <input data-input="segment-label" type="text" value="${escapeHtml(segment.label || '')}" />
+        <input data-input="segment-label" type="text" maxlength="60" value="${escapeHtml(segment.label || '')}" />
       </label>
 
       <div class="segment-slider-row">
@@ -2186,10 +2194,12 @@ function renderAnalysisHeader(
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <div class="session-switcher" data-role="session-switcher">
-            <button class="session-switcher__trigger" data-action="toggle-session-menu" type="button">
-              <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-              <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
-            </button>
+            <div class="session-switcher__trigger">
+              <h2 class="tool-header__title" data-action="edit-session-label" role="button" tabindex="0">${escapeHtml(session.label)}</h2>
+              <button class="session-switcher__chevron-btn" data-action="toggle-session-menu" type="button" aria-label="Session menu">
+                <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
+              </button>
+            </div>
             <div class="session-menu" data-role="session-menu" hidden></div>
           </div>
 
@@ -2223,10 +2233,12 @@ function renderTimelineHeader(
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <div class="session-switcher" data-role="session-switcher">
-            <button class="session-switcher__trigger" data-action="toggle-session-menu" type="button">
-              <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-              <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
-            </button>
+            <div class="session-switcher__trigger">
+              <h2 class="tool-header__title" data-action="edit-session-label" role="button" tabindex="0">${escapeHtml(session.label)}</h2>
+              <button class="session-switcher__chevron-btn" data-action="toggle-session-menu" type="button" aria-label="Session menu">
+                <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
+              </button>
+            </div>
             <div class="session-menu" data-role="session-menu" hidden></div>
           </div>
 
@@ -2385,7 +2397,7 @@ function renderTimelineComposerModal(
           <div class="composer-grid">
             <label class="numeric-field composer-grid__wide">
               <span>Session label</span>
-              <input data-input="composer-label" type="text" value="${escapeHtml(composerDraft.label)}" />
+              <input data-input="composer-label" type="text" maxlength="60" value="${escapeHtml(composerDraft.label)}" />
             </label>
 
             <label class="numeric-field composer-grid__wide">
@@ -5486,7 +5498,7 @@ export function createApp(root: HTMLElement): void {
     const intentInput = root.querySelector<HTMLSelectElement>('select[data-input="composer-intent"]');
 
     composerDraft = {
-      label: labelInput?.value || composerDraft.label,
+      label: sanitizeSessionLabel(labelInput?.value || composerDraft.label),
       source: sourceInput?.value || composerDraft.source,
       stepDuration: Math.max(1, Number(stepDurationInput?.value ?? composerDraft.stepDuration)),
       intent: (intentInput?.value as CompositionRequest['intent']) || composerDraft.intent,
@@ -6100,7 +6112,7 @@ export function createApp(root: HTMLElement): void {
     if (inputKey === 'segment-label' && target instanceof HTMLInputElement) {
       updateSelectedSegment((segment) => ({
         ...segment,
-        label: target.value.trim() || 'Segment',
+        label: sanitizeSessionLabel(target.value),
       }), false);
       return;
     }
@@ -6392,6 +6404,37 @@ export function createApp(root: HTMLElement): void {
     if (action === 'toggle-session-menu') {
       sessionMenuOpen = !sessionMenuOpen;
       syncSessionMenu();
+      return;
+    }
+
+    if (action === 'edit-session-label') {
+      const titleEl = actionTarget;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'session-switcher__input';
+      input.value = session.label;
+      input.maxLength = 60;
+      input.setAttribute('aria-label', 'Session name');
+
+      const commit = () => {
+        const newLabel = sanitizeSessionLabel(input.value);
+        session = { ...session, label: newLabel };
+        if (activeSavedId) {
+          updateSavedSession(activeSavedId, session);
+          savedSessions = loadSavedSessions();
+        }
+        persistAppState();
+        renderLayout();
+      };
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = session.label; input.blur(); }
+      });
+
+      titleEl.replaceWith(input);
+      input.select();
       return;
     }
 
