@@ -3749,7 +3749,8 @@ body.modal-open {
 }
 
 [data-theme="dark"] .visualizer-band-led {
-  opacity: 0.95;
+  color: rgba(200, 190, 178, 0.75);
+  opacity: calc(0.55 + (var(--band-level) * 0.45));
 }
 
 [data-theme="dark"] .visualizer-band-led.is-active {
