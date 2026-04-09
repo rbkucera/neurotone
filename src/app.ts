@@ -2388,10 +2388,8 @@ function renderTimelineComposerModal(
         <section class="compose-panel">
           <div class="compose-panel__header">
             <div>
-              <p class="layer-card__eyebrow">Input</p>
-              <h3>Notes and chords</h3>
+              <h3>Composer Input</h3>
             </div>
-            <span class="subtle">Use notes like A3 or C#4, chords like Am or Fmaj7, and duration suffixes like x2 or /2.</span>
           </div>
 
           <div class="composer-grid">
@@ -2402,7 +2400,7 @@ function renderTimelineComposerModal(
 
             <label class="numeric-field composer-grid__wide">
               <span>Step grid</span>
-              <textarea data-input="composer-source" rows="5">${escapeHtml(composerDraft.source)}</textarea>
+              <textarea data-input="composer-source" rows="3">${escapeHtml(composerDraft.source)}</textarea>
             </label>
 
             <label class="numeric-field">
@@ -2432,13 +2430,20 @@ function renderTimelineComposerModal(
 
         <aside class="compose-sidebar">
           <section class="compose-card">
-            <p class="layer-card__eyebrow">Current timeline</p>
-            <h3>${escapeHtml(session.label)}</h3>
-            <p class="subtle">${session.segments.length} segment${session.segments.length === 1 ? '' : 's'} · ${formatSeconds(totalSessionDuration(session))} total</p>
+            <h3>Composer Tips</h3>
+            <div class="composer-note">
             <p class="subtle">Use the composer to generate a segment sequence, then keep refining directly in timeline view.</p>
-          </section>
+            </div>
+            <br/>
+            <div class="composer-note">
+            <p class="subtle">Use notes like A3 or C#4, chords like Am or Fmaj7, and duration suffixes like x2 or /2.</p>
+            </div>
+            <br/>
+            <div class="composer-note">
+            <p class="subtle">You can rename or save your session later by clicking the session name in the header.</p>
+            </div>
 
-          <section class="compose-card" data-role="composer-output"></section>
+          </section>
         </aside>
         </div>
       </section>
@@ -3024,11 +3029,7 @@ function renderTimelineTabWorkspace(
     <section class="panel panel--workspace panel--workspace-timeline">
       <div class="workspace-stage__header workspace-stage__header--studio workspace-stage__header--tight">
         <div>
-          <p class="layer-card__eyebrow">Timeline</p>
-          <h2>Clip strip and inspector</h2>
-        </div>
-        <div class="workspace-stage__actions">
-          <span class="subtle">Desktop-first editing without leaving the main workspace.</span>
+          <p class="layer-card__eyebrow">Timeline Editor</p>
         </div>
       </div>
 

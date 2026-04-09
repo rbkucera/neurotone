@@ -11,7 +11,7 @@ export interface CatalogEntry {
 export const catalog: CatalogEntry[] = [
   {
     id: 'soft-arrival',
-    label: 'Soft Arrival',
+    label: 'Neurotone Intro',
     description:
       'A gentle opening with layered carriers, sweeping automation, and surf noise.',
     session: softArrival as unknown as Partial<SessionDefinition>,

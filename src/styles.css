@@ -1638,7 +1638,7 @@ input[type="range"] {
 
 .timeline-toolbar__field,
 .composer-grid__wide {
-  grid-column: span 2;
+  grid-column: span 3;
 }
 
 .composer-grid textarea {
@@ -1647,7 +1647,7 @@ input[type="range"] {
   border-radius: 16px;
   padding: 12px 14px;
   resize: vertical;
-  min-height: 120px;
+  min-height: 60px;
   background: rgba(255, 255, 255, 0.74);
   color: var(--text-strong);
 }
@@ -1779,7 +1779,7 @@ input[type="range"] {
 }
 
 .compose-panel__actions {
-  padding-top: 4px;
+  padding-top: 12px;
 }
 
 .timeline-strip-block,
