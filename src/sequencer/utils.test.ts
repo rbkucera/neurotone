@@ -275,7 +275,7 @@ describe('sequencer utils', () => {
     expect(moment.soundState.gain).toBeLessThan(0.42);
   });
 
-  it('samples segment one overrides with local transition time during loop wrap', () => {
+  it('interpolates between resolved end of last and resolved start of first during loop wrap', () => {
     const session = createSessionDefinition({
       loop: true,
       segments: [
@@ -316,12 +316,17 @@ describe('sequencer utils', () => {
       ],
     });
 
+    // Total=11. wrapTransitionDuration=3. wrapTransitionStart=8.
+    // At t=9.5: localTransitionTime=1.5, progress=0.5.
+    // Last segment (second) has no overrides, end state gain=0.42.
+    // First segment override at time=0 gives gain=0.2.
+    // Interpolated gain at progress=0.5: 0.42 + (0.2-0.42)*0.5 = 0.31.
     const total = totalSessionDuration(session);
     const moment = resolveSessionMoment(session, total - 1.5);
 
     expect(moment.playbackState.currentSegmentIndex).toBe(0);
     expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
-    expect(moment.soundState.gain).toBeCloseTo(0.5, 6);
+    expect(moment.soundState.gain).toBeCloseTo(0.31, 1);
   });
 
   it('uses resolved end state of last segment during loop-wrap transition', () => {

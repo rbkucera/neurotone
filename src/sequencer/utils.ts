@@ -511,18 +511,19 @@ export function resolveSessionMoment(
         lastWindow.segment.overrides,
         lastWindow.end - lastWindow.transitionStart,
       );
+      const firstStartState = applySegmentOverrides(
+        firstWindow.segment.state,
+        firstWindow.segment.overrides,
+        0,
+      );
       const baseState = interpolateSoundStates(
         lastEndState,
-        firstWindow.segment.state,
+        firstStartState,
         progress,
       );
 
       return {
-        soundState: applySegmentOverrides(
-          baseState,
-          firstWindow.segment.overrides,
-          localTransitionTime,
-        ),
+        soundState: baseState,
         playbackState: {
           status: 'playing',
           currentSegmentIndex: 0,
