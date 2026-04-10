@@ -1959,7 +1959,7 @@ input[type="range"] {
   border-radius: 12px;
   border: 1px solid rgba(75, 57, 40, 0.16);
   background: rgba(255, 255, 255, 0.92);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .timeline-clip--collapsed {
@@ -2075,8 +2075,8 @@ input[type="range"] {
 
 .timeline-clip__actions-inline {
   position: absolute;
-  top: 7px;
-  right: 26px;
+  top: -30px;
+  left: 7px;
   opacity: 0;
   transform: translateY(-2px);
   pointer-events: none;
@@ -2151,7 +2151,7 @@ input[type="range"] {
 }
 
 .timeline-chip-actions--overlay {
-  min-width: 124px;
+  min-width: 128px;
   justify-content: space-between;
 }
 
@@ -3585,10 +3585,23 @@ body.modal-open {
   border-color: var(--border);
 }
 
-[data-theme="dark"] .timeline-clip.is-active,
-[data-theme="dark"] .timeline-clip--collapsed {
+[data-theme="dark"] .timeline-clip:hover {
+  background: var(--surface);
+}
+
+
+[data-theme="dark"] .timeline-clip.is-active {
+  background: var(--surface);
+ /* border-color: var(--accent); */
+}
+
+[data-theme="dark"] .timeline-clip.is-selected {
+ /* background: var(--surface-inset);*/
+ border-color: var(--accent); 
+}
+
+[data-theme="dark"] .timeline-clip--collapsed { 
   background: var(--surface-raised);
-  border-color: var(--accent);
 }
 
 [data-theme="dark"] .segment-card.is-selected {

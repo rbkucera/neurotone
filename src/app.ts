@@ -357,7 +357,7 @@ function renderSegmentMetaControls(segment: SessionSegment): string {
             data-input="segment-hold-duration"
             type="number"
             min="1"
-            max="60"
+            max="600"
             step="0.5"
             value="${holdDuration}"
           />
@@ -385,7 +385,7 @@ function renderSegmentMetaControls(segment: SessionSegment): string {
 }
 
 function clampSegmentHold(value: number): number {
-  return Math.min(60, Math.max(1, value));
+  return Math.min(600, Math.max(1, value));
 }
 
 function clampSegmentTransition(value: number, holdDuration: number): number {
@@ -1452,12 +1452,12 @@ function renderTimelineViewport(
     overlayCandidateId === pendingRemoveSegmentId
       ? TIMELINE_CHIP_ACTIONS.confirmInlineMinWidthPx
       : TIMELINE_CHIP_ACTIONS.inlineMinWidthPx;
-  const overlaySegmentId =
-    overlayCandidateClip &&
+  const overlaySegmentId = null;
+/*    overlayCandidateClip &&
     overlayCandidateClip.width < overlayCandidateMinWidth
       ? overlayCandidateClip.window.segment.id
       : null;
-
+*/
   return `
     <div class="timeline-canvas__chrome">
       <div class="timeline-canvas__zoom">
@@ -1507,8 +1507,8 @@ function renderTimelineViewport(
               const inlineActionsThreshold = isPendingRemove
                 ? TIMELINE_CHIP_ACTIONS.confirmInlineMinWidthPx
                 : TIMELINE_CHIP_ACTIONS.inlineMinWidthPx;
-              const hasInlineActions =
-                clip.width >= inlineActionsThreshold;
+              const hasInlineActions = true;
+//                clip.width >= inlineActionsThreshold;
 
               if (clip.collapsed) {
                 const midpoint = clip.left + clip.width / 2;
@@ -2511,7 +2511,7 @@ function renderTimelineInspectorActions(
 }
 
 function segmentOverrideSpanSeconds(segment: SessionSegment): number {
-  return Math.max(0.5, segment.holdDuration + segment.transitionDuration);
+  return Math.max(0.5, segment.holdDuration);
 }
 
 function collectSegmentOverrideTargets(
@@ -4433,7 +4433,7 @@ export function createApp(root: HTMLElement): void {
     );
     const top = Math.max(
       minTop,
-      Math.min(clipRect.top - scrollRect.top + 6, maxTop),
+      Math.min(clipRect.top - scrollRect.top - 29, maxTop),
     );
 
     overlay.style.left = `${left}px`;
