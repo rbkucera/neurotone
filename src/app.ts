@@ -164,6 +164,14 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function sanitizeSessionLabel(raw: string): string {
+  return raw
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .trim()
+    .slice(0, 60)
+    || 'Untitled session';
+}
+
 function formatHz(value: number): string {
   return `${value.toFixed(value < 10 ? 1 : 2).replace(/\.00$/, '')} Hz`;
 }
@@ -324,7 +332,7 @@ function renderSegmentMetaControls(segment: SessionSegment): string {
     <div class="segment-compact">
       <label class="numeric-field segment-compact__label">
         <span>Segment label</span>
-        <input data-input="segment-label" type="text" value="${escapeHtml(segment.label || '')}" />
+        <input data-input="segment-label" type="text" maxlength="60" value="${escapeHtml(segment.label || '')}" />
       </label>
 
       <div class="segment-slider-row">
@@ -2186,10 +2194,12 @@ function renderAnalysisHeader(
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <div class="session-switcher" data-role="session-switcher">
-            <button class="session-switcher__trigger" data-action="toggle-session-menu" type="button">
-              <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-              <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
-            </button>
+            <div class="session-switcher__trigger">
+              <h2 class="tool-header__title" data-action="edit-session-label" role="button" tabindex="0">${escapeHtml(session.label)}</h2>
+              <button class="session-switcher__chevron-btn" data-action="toggle-session-menu" type="button" aria-label="Session menu">
+                <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
+              </button>
+            </div>
             <div class="session-menu" data-role="session-menu" hidden></div>
           </div>
 
@@ -2223,10 +2233,12 @@ function renderTimelineHeader(
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <div class="session-switcher" data-role="session-switcher">
-            <button class="session-switcher__trigger" data-action="toggle-session-menu" type="button">
-              <h2 class="tool-header__title">${escapeHtml(session.label)}</h2>
-              <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
-            </button>
+            <div class="session-switcher__trigger">
+              <h2 class="tool-header__title" data-action="edit-session-label" role="button" tabindex="0">${escapeHtml(session.label)}</h2>
+              <button class="session-switcher__chevron-btn" data-action="toggle-session-menu" type="button" aria-label="Session menu">
+                <span class="session-switcher__chevron" aria-hidden="true">&#x25BE;</span>
+              </button>
+            </div>
             <div class="session-menu" data-role="session-menu" hidden></div>
           </div>
 
@@ -2245,13 +2257,14 @@ function renderTimelineHeader(
   `;
 }
 
-function renderCatalogHeader(theme: ThemeId): string {
+function renderCatalogHeader(theme: ThemeId, hasActiveSession: boolean): string {
   return `
     <section class="panel panel--tool-header panel--tool-header-timeline">
       <div class="tool-header tool-header--timeline">
         <div class="tool-header__row">
           <h2 class="tool-header__title">Neurotone</h2>
           <div class="tool-header__controls">
+            ${hasActiveSession ? '<button class="ghost-button" data-action="return-to-session" type="button">Back to session</button>' : ''}
             ${renderThemeToggle(theme)}
           </div>
         </div>
@@ -2272,6 +2285,10 @@ function renderCatalogWorkspace(
 
       <h3 class="catalog-section__heading">Curated</h3>
       <div class="catalog-grid">
+        <button class="catalog-card catalog-card--create-new" data-action="create-new-session" type="button">
+          <h3 class="catalog-card__title">+ Create new session</h3>
+          <p class="catalog-card__description">Start from scratch with the composer</p>
+        </button>
         ${catalog
           .map(
             (entry) => `
@@ -2371,21 +2388,19 @@ function renderTimelineComposerModal(
         <section class="compose-panel">
           <div class="compose-panel__header">
             <div>
-              <p class="layer-card__eyebrow">Input</p>
-              <h3>Notes and chords</h3>
+              <h3>Composer Input</h3>
             </div>
-            <span class="subtle">Use notes like A3 or C#4, chords like Am or Fmaj7, and duration suffixes like x2 or /2.</span>
           </div>
 
           <div class="composer-grid">
             <label class="numeric-field composer-grid__wide">
               <span>Session label</span>
-              <input data-input="composer-label" type="text" value="${escapeHtml(composerDraft.label)}" />
+              <input data-input="composer-label" type="text" maxlength="60" value="${escapeHtml(composerDraft.label)}" />
             </label>
 
             <label class="numeric-field composer-grid__wide">
               <span>Step grid</span>
-              <textarea data-input="composer-source" rows="5">${escapeHtml(composerDraft.source)}</textarea>
+              <textarea data-input="composer-source" rows="3">${escapeHtml(composerDraft.source)}</textarea>
             </label>
 
             <label class="numeric-field">
@@ -2415,13 +2430,20 @@ function renderTimelineComposerModal(
 
         <aside class="compose-sidebar">
           <section class="compose-card">
-            <p class="layer-card__eyebrow">Current timeline</p>
-            <h3>${escapeHtml(session.label)}</h3>
-            <p class="subtle">${session.segments.length} segment${session.segments.length === 1 ? '' : 's'} · ${formatSeconds(totalSessionDuration(session))} total</p>
+            <h3>Composer Tips</h3>
+            <div class="composer-note">
             <p class="subtle">Use the composer to generate a segment sequence, then keep refining directly in timeline view.</p>
-          </section>
+            </div>
+            <br/>
+            <div class="composer-note">
+            <p class="subtle">Use notes like A3 or C#4, chords like Am or Fmaj7, and duration suffixes like x2 or /2.</p>
+            </div>
+            <br/>
+            <div class="composer-note">
+            <p class="subtle">You can rename or save your session later by clicking the session name in the header.</p>
+            </div>
 
-          <section class="compose-card" data-role="composer-output"></section>
+          </section>
         </aside>
         </div>
       </section>
@@ -3007,11 +3029,7 @@ function renderTimelineTabWorkspace(
     <section class="panel panel--workspace panel--workspace-timeline">
       <div class="workspace-stage__header workspace-stage__header--studio workspace-stage__header--tight">
         <div>
-          <p class="layer-card__eyebrow">Timeline</p>
-          <h2>Clip strip and inspector</h2>
-        </div>
-        <div class="workspace-stage__actions">
-          <span class="subtle">Desktop-first editing without leaving the main workspace.</span>
+          <p class="layer-card__eyebrow">Timeline Editor</p>
         </div>
       </div>
 
@@ -3404,6 +3422,7 @@ export function createApp(root: HTMLElement): void {
         ? loadStoredStateViewHint()
         : null;
   const isFirstVisit = hashRestored === null && storedRestored === null;
+  let hasLoadedSession = !isFirstVisit;
   let playbackMode: AppViewMode =
     isFirstVisit
       ? 'catalog'
@@ -3819,6 +3838,7 @@ export function createApp(root: HTMLElement): void {
     );
     activeCatalogId = entry.id;
     activeSavedId = null;
+    hasLoadedSession = true;
     playbackMode = 'visualizer';
     replaceSession(nextSession, { rerender: false });
     renderLayout();
@@ -3834,6 +3854,7 @@ export function createApp(root: HTMLElement): void {
     const nextSession = createSessionDefinition(saved.session);
     activeCatalogId = null;
     activeSavedId = saved.id;
+    hasLoadedSession = true;
     playbackMode = 'visualizer';
     replaceSession(nextSession, { rerender: false });
     renderLayout();
@@ -5404,7 +5425,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (playbackMode === 'catalog') {
-      headerShell.innerHTML = renderCatalogHeader(currentTheme);
+      headerShell.innerHTML = renderCatalogHeader(currentTheme, hasLoadedSession);
       workspaceShell.innerHTML = renderCatalogWorkspace(savedSessions);
       syncConfirmDialog();
       return;
@@ -5478,7 +5499,7 @@ export function createApp(root: HTMLElement): void {
     const intentInput = root.querySelector<HTMLSelectElement>('select[data-input="composer-intent"]');
 
     composerDraft = {
-      label: labelInput?.value || composerDraft.label,
+      label: sanitizeSessionLabel(labelInput?.value || composerDraft.label),
       source: sourceInput?.value || composerDraft.source,
       stepDuration: Math.max(1, Number(stepDurationInput?.value ?? composerDraft.stepDuration)),
       intent: (intentInput?.value as CompositionRequest['intent']) || composerDraft.intent,
@@ -6092,7 +6113,7 @@ export function createApp(root: HTMLElement): void {
     if (inputKey === 'segment-label' && target instanceof HTMLInputElement) {
       updateSelectedSegment((segment) => ({
         ...segment,
-        label: target.value.trim() || 'Segment',
+        label: sanitizeSessionLabel(target.value),
       }), false);
       return;
     }
@@ -6387,6 +6408,37 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
+    if (action === 'edit-session-label') {
+      const titleEl = actionTarget;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'session-switcher__input';
+      input.value = session.label;
+      input.maxLength = 60;
+      input.setAttribute('aria-label', 'Session name');
+
+      const commit = () => {
+        const newLabel = sanitizeSessionLabel(input.value);
+        session = { ...session, label: newLabel };
+        if (activeSavedId) {
+          updateSavedSession(activeSavedId, session);
+          savedSessions = loadSavedSessions();
+        }
+        persistAppState();
+        renderLayout();
+      };
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = session.label; input.blur(); }
+      });
+
+      titleEl.replaceWith(input);
+      input.select();
+      return;
+    }
+
     if (action === 'select-catalog-entry') {
       const catalogId = actionTarget.dataset.catalogId;
       if (!catalogId) return;
@@ -6402,6 +6454,27 @@ export function createApp(root: HTMLElement): void {
       pendingConfirmCatalogId = entry.id;
       pendingConfirmSavedId = null;
       syncConfirmDialog();
+      return;
+    }
+
+    if (action === 'create-new-session') {
+      sequencer.stop();
+      const nextSession = createSessionDefinition();
+      activeCatalogId = null;
+      activeSavedId = null;
+      hasLoadedSession = true;
+      playbackMode = 'timeline';
+      replaceSession(nextSession, { rerender: false });
+      ensureTimelineUI({ tab: 'timeline', composerModalOpen: true }, nextSession);
+      renderLayout();
+      persistAppState();
+      return;
+    }
+
+    if (action === 'return-to-session') {
+      playbackMode = 'visualizer';
+      renderLayout();
+      persistAppState();
       return;
     }
 

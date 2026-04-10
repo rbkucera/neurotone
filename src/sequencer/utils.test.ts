@@ -124,6 +124,59 @@ describe('sequencer utils', () => {
     expect(moment.soundState.gain).toBeLessThan(0.34);
   });
 
+  it('uses resolved end state of previous segment during transition', () => {
+    const session = createSessionDefinition({
+      segments: [
+        createSessionSegment({
+          id: 'one',
+          holdDuration: 10,
+          transitionDuration: 0,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 200, beatHz: 10, gain: 0.8 })],
+            gain: 0.5,
+            noise: { enabled: false, volume: 0, model: 'soft' },
+          },
+          overrides: [
+            {
+              id: 'carrier-ramp',
+              label: 'Carrier ramp',
+              target: 'pair:a.carrierHz',
+              interpolation: 'linear',
+              enabled: true,
+              keyframes: [
+                { id: 'k1', time: 0, value: 200 },
+                { id: 'k2', time: 10, value: 400 },
+              ],
+            },
+          ],
+        }),
+        createSessionSegment({
+          id: 'two',
+          holdDuration: 10,
+          transitionDuration: 4,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 300, beatHz: 10, gain: 0.8 })],
+            gain: 0.5,
+            noise: { enabled: false, volume: 0, model: 'soft' },
+          },
+          overrides: [],
+        }),
+      ],
+    });
+
+    // Segment one ends at t=10 with carrierHz override at 400.
+    // Segment two transition runs t=10..14. At t=12, progress=0.5.
+    // Should interpolate 400→300 = 350, not 200→300 = 250.
+    const moment = resolveSessionMoment(session, 12);
+
+    expect(moment.playbackState.currentSegmentIndex).toBe(1);
+    expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
+
+    const pair = moment.soundState.pairs.find((p) => p.id === 'a');
+    expect(pair).toBeDefined();
+    expect(pair!.carrierHz).toBeCloseTo(350, 0);
+  });
+
   it('treats exact segment boundaries as the start of the next segment', () => {
     const session = createSessionDefinition({
       segments: [
@@ -222,7 +275,7 @@ describe('sequencer utils', () => {
     expect(moment.soundState.gain).toBeLessThan(0.42);
   });
 
-  it('samples segment one overrides with local transition time during loop wrap', () => {
+  it('interpolates between resolved end of last and resolved start of first during loop wrap', () => {
     const session = createSessionDefinition({
       loop: true,
       segments: [
@@ -263,12 +316,74 @@ describe('sequencer utils', () => {
       ],
     });
 
+    // Total=11. wrapTransitionDuration=3. wrapTransitionStart=8.
+    // At t=9.5: localTransitionTime=1.5, progress=0.5.
+    // Last segment (second) has no overrides, end state gain=0.42.
+    // First segment override at time=0 gives gain=0.2.
+    // Interpolated gain at progress=0.5: 0.42 + (0.2-0.42)*0.5 = 0.31.
     const total = totalSessionDuration(session);
     const moment = resolveSessionMoment(session, total - 1.5);
 
     expect(moment.playbackState.currentSegmentIndex).toBe(0);
     expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
-    expect(moment.soundState.gain).toBeCloseTo(0.5, 6);
+    expect(moment.soundState.gain).toBeCloseTo(0.31, 1);
+  });
+
+  it('uses resolved end state of last segment during loop-wrap transition', () => {
+    const session = createSessionDefinition({
+      loop: true,
+      segments: [
+        createSessionSegment({
+          id: 'first',
+          holdDuration: 4,
+          transitionDuration: 2,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 180, beatHz: 8, gain: 0.7 })],
+            gain: 0.3,
+            noise: { enabled: false, volume: 0, model: 'soft' },
+          },
+          overrides: [],
+        }),
+        createSessionSegment({
+          id: 'second',
+          holdDuration: 6,
+          transitionDuration: 2,
+          state: {
+            pairs: [sanitizeTonePair({ id: 'a', carrierHz: 260, beatHz: 10, gain: 0.7 })],
+            gain: 0.5,
+            noise: { enabled: false, volume: 0, model: 'soft' },
+          },
+          overrides: [
+            {
+              id: 'carrier-ramp',
+              label: 'Carrier ramp',
+              target: 'pair:a.carrierHz',
+              interpolation: 'linear',
+              enabled: true,
+              keyframes: [
+                { id: 'k1', time: 0, value: 260 },
+                { id: 'k2', time: 8, value: 500 },
+              ],
+            },
+          ],
+        }),
+      ],
+    });
+
+    // First window: transitionStart=0, holdStart=0, end=4.
+    // Second window: transitionStart=4, holdStart=6, end=12.
+    // Total=12. wrapTransitionDuration=2, wrapTransitionStart=10.
+    // Last segment localTime at end: 12-4=8. Override at t=8: carrierHz=500.
+    // At t=11: localTransitionTime=1, progress=0.5.
+    // Should interpolate 500→180 = 340, not 260→180 = 220.
+    const moment = resolveSessionMoment(session, 11);
+
+    expect(moment.playbackState.currentSegmentIndex).toBe(0);
+    expect(moment.playbackState.currentSegmentPhase).toBe('transitioning');
+
+    const pair = moment.soundState.pairs.find((p) => p.id === 'a');
+    expect(pair).toBeDefined();
+    expect(pair!.carrierHz).toBeCloseTo(340, 0);
   });
 
   it('does not force wrap transition when first segment transition is zero', () => {

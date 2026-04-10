@@ -499,7 +499,6 @@ input[type="range"] {
 
 .notice-banner {
   position: relative;
-  z-index: 1;
   margin-top: 18px;
   display: flex;
   justify-content: space-between;
@@ -1639,7 +1638,7 @@ input[type="range"] {
 
 .timeline-toolbar__field,
 .composer-grid__wide {
-  grid-column: span 2;
+  grid-column: span 3;
 }
 
 .composer-grid textarea {
@@ -1648,7 +1647,7 @@ input[type="range"] {
   border-radius: 16px;
   padding: 12px 14px;
   resize: vertical;
-  min-height: 120px;
+  min-height: 60px;
   background: rgba(255, 255, 255, 0.74);
   color: var(--text-strong);
 }
@@ -1780,7 +1779,7 @@ input[type="range"] {
 }
 
 .compose-panel__actions {
-  padding-top: 4px;
+  padding-top: 12px;
 }
 
 .timeline-strip-block,
@@ -3292,6 +3291,17 @@ body.modal-open {
   box-shadow: 0 4px 16px rgba(39, 27, 18, 0.08);
 }
 
+.catalog-card--create-new {
+  border-style: dashed;
+  border-color: rgba(157, 94, 47, 0.25);
+  background: rgba(157, 94, 47, 0.03);
+}
+
+.catalog-card--create-new:hover {
+  border-color: rgba(157, 94, 47, 0.45);
+  background: rgba(157, 94, 47, 0.06);
+}
+
 .catalog-card--saved {
   display: flex;
   align-items: stretch;
@@ -3367,6 +3377,7 @@ body.modal-open {
 
 .session-switcher {
   position: relative;
+  z-index: 10;
   min-width: 0;
 }
 
@@ -3377,7 +3388,6 @@ body.modal-open {
   padding: 4px 10px 4px 8px;
   border: 1px solid rgba(75, 57, 40, 0.15);
   background: rgba(255, 255, 255, 0.45);
-  cursor: pointer;
   min-width: 0;
   max-width: 100%;
   border-radius: 8px;
@@ -3391,11 +3401,44 @@ body.modal-open {
 }
 
 .session-switcher__trigger .tool-header__title {
-  pointer-events: none;
+  cursor: text;
+}
+
+.session-switcher__chevron-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  transition: background 120ms ease;
+}
+
+.session-switcher__chevron-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.session-switcher__input {
+  font: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  color: var(--text-strong);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--accent);
+  outline: none;
+  padding: 0;
+  margin: 0;
+  min-width: 80px;
+  max-width: 100%;
 }
 
 .session-switcher__chevron {
-  font-size: 0.65rem;
+  font-size: 0.85rem;
   color: var(--accent-strong);
   flex-shrink: 0;
   opacity: 0.6;
@@ -3577,6 +3620,15 @@ body.modal-open {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
+[data-theme="dark"] .session-switcher__chevron-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .session-switcher__input {
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
+}
+
 [data-theme="dark"] .catalog-card,
 [data-theme="dark"] .catalog-card--saved {
   background: var(--surface-raised);
@@ -3586,6 +3638,17 @@ body.modal-open {
 [data-theme="dark"] .catalog-card:hover {
   border-color: var(--accent);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .catalog-card--create-new {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
+}
+
+[data-theme="dark"] .catalog-card--create-new:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 [data-theme="dark"] .catalog-card__body:hover {
@@ -3721,8 +3784,18 @@ body.modal-open {
   color: #ff8a7a;
 }
 
+[data-theme="dark"] .visualizer-band-leds {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
 [data-theme="dark"] .visualizer-band-led {
-  opacity: 0.95;
+  color: rgba(200, 190, 178, 0.75);
+  opacity: calc(0.55 + (var(--band-level) * 0.45));
+}
+
+[data-theme="dark"] .visualizer-band-led.is-active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .visualizer-band-led.is-dominant {
@@ -3749,6 +3822,11 @@ body.modal-open {
 
 [data-theme="dark"] .compose-card--summary {
   border-style: dashed;
+}
+
+[data-theme="dark"] .session-summary-strip {
+  background: var(--surface-raised);
+  border-color: var(--border);
 }
 
 [data-theme="dark"] .composer-note {

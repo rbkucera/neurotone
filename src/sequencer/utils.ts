@@ -506,18 +506,24 @@ export function resolveSessionMoment(
       const localTransitionTime = boundedTime - wrapTransitionStart;
       const progress =
         localTransitionTime / Math.max(wrapTransitionDuration, 0.0001);
-      const baseState = interpolateSoundStates(
+      const lastEndState = applySegmentOverrides(
         lastWindow.segment.state,
+        lastWindow.segment.overrides,
+        lastWindow.end - lastWindow.transitionStart,
+      );
+      const firstStartState = applySegmentOverrides(
         firstWindow.segment.state,
+        firstWindow.segment.overrides,
+        0,
+      );
+      const baseState = interpolateSoundStates(
+        lastEndState,
+        firstStartState,
         progress,
       );
 
       return {
-        soundState: applySegmentOverrides(
-          baseState,
-          firstWindow.segment.overrides,
-          localTransitionTime,
-        ),
+        soundState: baseState,
         playbackState: {
           status: 'playing',
           currentSegmentIndex: 0,
@@ -541,12 +547,17 @@ export function resolveSessionMoment(
       boundedTime >= window.transitionStart &&
       boundedTime < window.holdStart
     ) {
-      const previousSegment = windows[window.index - 1].segment;
+      const previousWindow = windows[window.index - 1];
+      const previousEndState = applySegmentOverrides(
+        previousWindow.segment.state,
+        previousWindow.segment.overrides,
+        previousWindow.end - previousWindow.transitionStart,
+      );
       const progress =
         (boundedTime - window.transitionStart) /
         Math.max(window.segment.transitionDuration, 0.0001);
       const baseState = interpolateSoundStates(
-        previousSegment.state,
+        previousEndState,
         window.segment.state,
         progress,
       );
