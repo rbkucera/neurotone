@@ -357,7 +357,7 @@ function renderSegmentMetaControls(segment: SessionSegment): string {
             data-input="segment-hold-duration"
             type="number"
             min="1"
-            max="60"
+            max="600"
             step="0.5"
             value="${holdDuration}"
           />
@@ -385,7 +385,7 @@ function renderSegmentMetaControls(segment: SessionSegment): string {
 }
 
 function clampSegmentHold(value: number): number {
-  return Math.min(60, Math.max(1, value));
+  return Math.min(600, Math.max(1, value));
 }
 
 function clampSegmentTransition(value: number, holdDuration: number): number {
@@ -2511,7 +2511,7 @@ function renderTimelineInspectorActions(
 }
 
 function segmentOverrideSpanSeconds(segment: SessionSegment): number {
-  return Math.max(0.5, segment.holdDuration + segment.transitionDuration);
+  return Math.max(0.5, segment.holdDuration);
 }
 
 function collectSegmentOverrideTargets(
